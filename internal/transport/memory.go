@@ -22,6 +22,7 @@ type MemoryTransport struct {
 	opts    MemoryOptions
 	once    sync.Once
 	closed  chan struct{}
+	peer    *MemoryTransport // reference to the paired transport
 }
 
 // NewMemoryPair creates two connected MemoryTransports.
@@ -32,6 +33,8 @@ func NewMemoryPair(opts MemoryOptions) (*MemoryTransport, *MemoryTransport) {
 
 	a := &MemoryTransport{send: aToB, receive: bToA, opts: opts, closed: make(chan struct{})}
 	b := &MemoryTransport{send: bToA, receive: aToB, opts: opts, closed: make(chan struct{})}
+	a.peer = b
+	b.peer = a
 	return a, b
 }
 
@@ -85,9 +88,13 @@ func (m *MemoryTransport) Receive(ctx context.Context) (<-chan Message, error) {
 	return ch, nil
 }
 
-// Close stops the transport.
+// Close stops the transport and signals the paired transport so blocked senders
+// do not deadlock after the buffer fills.
 func (m *MemoryTransport) Close() error {
 	m.once.Do(func() { close(m.closed) })
+	if p := m.peer; p != nil {
+		p.once.Do(func() { close(p.closed) })
+	}
 	return nil
 }
 

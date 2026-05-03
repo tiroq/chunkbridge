@@ -29,6 +29,12 @@ func DecodeMessage(text string, key []byte) (*Frame, error) {
 		return nil, ErrUnknownVersion
 	}
 
+	// Validate the message type field: only "D" (data) and "A" (ACK) are defined.
+	msgType := parts[1]
+	if msgType != "D" && msgType != "A" {
+		return nil, fmt.Errorf("%w: unknown message type %q", ErrMalformed, msgType)
+	}
+
 	sessionID := parts[2]
 	seqStr := parts[3]
 	b64Data := parts[4]

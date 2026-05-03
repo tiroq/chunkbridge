@@ -34,11 +34,11 @@ type MaxConfig struct {
 
 // CryptoConfig holds key-derivation parameters.
 type CryptoConfig struct {
-	Passphrase  string `yaml:"passphrase"`
-	Salt        string `yaml:"salt"`
-	Argon2Time  uint32 `yaml:"argon2_time"`
-	Argon2Mem   uint32 `yaml:"argon2_memory_kb"`
-	Argon2Threads uint8 `yaml:"argon2_threads"`
+	PassphraseEnv string `yaml:"passphrase_env"`
+	Salt          string `yaml:"salt"`
+	Argon2Time    uint32 `yaml:"argon2_time"`
+	Argon2Mem     uint32 `yaml:"argon2_memory_kb"`
+	Argon2Threads uint8  `yaml:"argon2_threads"`
 }
 
 // RateLimitsConfig controls global and per-bucket rate limits.

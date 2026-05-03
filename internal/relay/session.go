@@ -97,10 +97,12 @@ func (s *Session) SendRequest(ctx context.Context, frame *protocol.Frame, timeou
 	}
 
 	// Wait for response.
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case resp := <-ch:
 		return resp, nil
-	case <-time.After(timeout):
+	case <-timer.C:
 		return nil, fmt.Errorf("relay: timeout waiting for response to request %s", frame.RequestID)
 	case <-ctx.Done():
 		return nil, ctx.Err()

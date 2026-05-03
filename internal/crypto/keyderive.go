@@ -12,12 +12,33 @@ const (
 	argon2SaltLen = 16
 )
 
+// DeriveParams holds the Argon2id cost parameters used during key derivation.
+type DeriveParams struct {
+	Time    uint32
+	Memory  uint32
+	Threads uint8
+}
+
+// DefaultDeriveParams are the default Argon2id cost parameters.
+var DefaultDeriveParams = DeriveParams{Time: 1, Memory: 64 * 1024, Threads: 4}
+
 // DeriveKey derives a 32-byte key from passphrase and salt using Argon2id.
-func DeriveKey(passphrase, salt []byte) ([]byte, error) {
-	if len(salt) == 0 {
-		return nil, fmt.Errorf("keyderive: salt must not be empty")
+// salt must be exactly 16 bytes. params controls the Argon2id cost; pass
+// DefaultDeriveParams when no custom tuning is required.
+func DeriveKey(passphrase, salt []byte, params DeriveParams) ([]byte, error) {
+	if len(salt) != argon2SaltLen {
+		return nil, fmt.Errorf("keyderive: salt must be exactly %d bytes, got %d", argon2SaltLen, len(salt))
 	}
-	key := argon2.IDKey(passphrase, salt, 1, 64*1024, 4, argon2KeyLen)
+	if params.Time == 0 {
+		params.Time = DefaultDeriveParams.Time
+	}
+	if params.Memory == 0 {
+		params.Memory = DefaultDeriveParams.Memory
+	}
+	if params.Threads == 0 {
+		params.Threads = DefaultDeriveParams.Threads
+	}
+	key := argon2.IDKey(passphrase, salt, params.Time, params.Memory, params.Threads, argon2KeyLen)
 	return key, nil
 }
 

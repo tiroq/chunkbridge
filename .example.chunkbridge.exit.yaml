@@ -9,8 +9,8 @@ transport:
     poll_ms: 1000
 
 crypto:
-  passphrase: "change-me-long-random-passphrase"
-  salt: "change-me-16-byte"
+  passphrase_env: "CHUNKBRIDGE_SHARED_KEY"
+  salt: "saltchangeme1234"
   argon2_time: 1
   argon2_memory_kb: 65536
   argon2_threads: 4

@@ -133,6 +133,15 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	}
 	defer httpResp.Body.Close()
 
+	// Enforce content-type policy before reading the potentially large body.
+	if ct := httpResp.Header.Get("Content-Type"); ct != "" {
+		if err := policy.CheckContentType(ct, e.cfg.Policy); err != nil {
+			e.log.Warn("exit: content-type policy denied", "content_type", ct)
+			e.sendError(ctx, frame, http.StatusForbidden, err.Error())
+			return
+		}
+	}
+
 	maxBytes := e.cfg.Policy.MaxResponseBytes
 	if maxBytes <= 0 {
 		maxBytes = 10 * 1024 * 1024

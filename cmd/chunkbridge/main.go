@@ -150,7 +150,7 @@ func runSelftest() {
 
 	// 2. Derive key.
 	salt := []byte("selftestsalt1234") // exactly 16 bytes
-	key, err := cbcrypto.DeriveKey([]byte("selftestpassword"), salt)
+	key, err := cbcrypto.DeriveKey([]byte("selftestpassword"), salt, cbcrypto.DefaultDeriveParams)
 	if err != nil {
 		fmt.Printf("FAIL: key derivation: %v\n", err)
 		os.Exit(1)
@@ -177,7 +177,10 @@ func runSelftest() {
 	}
 	go func() { _ = p.Serve(ln) }()
 	// Wait for the proxy server to start accepting connections.
-	waitForListener(ln.Addr().String())
+	if err := waitForListener(ln.Addr().String()); err != nil {
+		fmt.Printf("FAIL: proxy did not start: %v\n", err)
+		os.Exit(1)
+	}
 
 	proxyURL, _ := url.Parse("http://" + ln.Addr().String())
 	httpClient := &http.Client{
@@ -247,25 +250,40 @@ func runSelftest() {
 }
 
 func deriveKey(cfg *config.Config) ([]byte, error) {
-	passphrase := cfg.Crypto.Passphrase
-	salt := cfg.Crypto.Salt
-	if passphrase == "" || salt == "" {
-		return nil, fmt.Errorf("crypto.passphrase and crypto.salt must be set")
+	envName := cfg.Crypto.PassphraseEnv
+	if envName == "" {
+		envName = "CHUNKBRIDGE_SHARED_KEY"
 	}
-	return cbcrypto.DeriveKey([]byte(passphrase), []byte(salt))
+	passphrase := os.Getenv(envName)
+	if passphrase == "" {
+		return nil, fmt.Errorf("env var %q is not set or empty; set it to the shared passphrase", envName)
+	}
+	salt := cfg.Crypto.Salt
+	if salt == "" {
+		return nil, fmt.Errorf("crypto.salt must be set in config (exactly 16 bytes)")
+	}
+	saltBytes := []byte(salt)
+	params := cbcrypto.DeriveParams{
+		Time:    cfg.Crypto.Argon2Time,
+		Memory:  cfg.Crypto.Argon2Mem,
+		Threads: cfg.Crypto.Argon2Threads,
+	}
+	return cbcrypto.DeriveKey([]byte(passphrase), saltBytes, params)
 }
 
 // waitForListener retries a TCP dial until the listener is accepting or 3 s elapses.
-func waitForListener(addr string) {
+// It returns an error if the listener does not become ready in time.
+func waitForListener(addr string) error {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
 			conn.Close()
-			return
+			return nil
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	return fmt.Errorf("proxy listener at %s did not start within 3s", addr)
 }
 
 func buildTransport(cfg *config.Config) (transport.Transport, error) {

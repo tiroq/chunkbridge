@@ -24,7 +24,7 @@ var testKey []byte
 
 func init() {
 	var err error
-	testKey, err = cbcrypto.DeriveKey([]byte("integrationtest"), []byte("integsalt1234567"))
+	testKey, err = cbcrypto.DeriveKey([]byte("integrationtest"), []byte("integsalt1234567"), cbcrypto.DefaultDeriveParams)
 	if err != nil {
 		panic("init: derive key: " + err.Error())
 	}

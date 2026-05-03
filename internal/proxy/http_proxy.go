@@ -102,6 +102,13 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		targetURL = r.URL.String()
 	}
 
+	// Apply client-side policy check before forwarding to the exit.
+	if err := p.pol.CheckRequest(targetURL); err != nil {
+		p.log.Warn("proxy: policy denied", "url", targetURL, "err", err)
+		http.Error(w, "policy: "+err.Error(), http.StatusForbidden)
+		return
+	}
+
 	req := relayRequest{
 		Method:  r.Method,
 		URL:     targetURL,
