@@ -1,3 +1,4 @@
+package relay
 package relay_test
 
 import (
