@@ -48,29 +48,53 @@ The logger (`internal/observability/logger.go`) never logs:
 * **Traffic analysis**: message length and timing are visible to the platform. Padding is not currently implemented.
 * **Forward secrecy**: key derivation is static per deployment. Rotate the passphrase/salt to achieve key rotation.
 
-## DNS Rebinding / Post-Resolution SSRF Gap (Known P1)
+## DNS Rebinding / Post-Resolution IP Validation
 
-> **Warning:** `BlockPrivateRanges` is **not complete SSRF protection** in the current implementation. Do not rely on it as a sole defence in production.
+### Protection implemented
 
-### How the gap works
+The exit executor no longer relies solely on URL-string hostname validation. A custom `SafeDialer` (in `internal/policy/dialer.go`) is installed as the `DialContext` hook of the exit executor's `http.Transport`.
 
-`policy.CheckRequest` validates the hostname against private IP ranges and the domain allow-list **before** any DNS lookup. The exit node's `http.Client.Do` call then resolves the hostname to an IP address via the system resolver — that resolved IP is **never re-validated** against the private IP blocklist.
+When `BlockPrivateRanges = true`, the `SafeDialer`:
 
-An attacker who controls DNS (or who can insert a short-TTL record) can point a permitted hostname to `192.168.0.1`, `169.254.169.254` (cloud metadata), or any other internal address, bypassing all SSRF defences.
+1. Resolves all IP addresses for the target hostname using `net.DefaultResolver.LookupIPAddr`.
+2. Validates every resolved IP against `policy.IsPrivateIP` before any connection is attempted.
+3. If any resolved IP is private, loopback, link-local, CGNAT, or metadata-range, the request fails with a policy error — no TCP connection is opened.
+4. Dials the first allowed resolved IP directly (as `ip:port`), which prevents the OS from performing a second DNS lookup at connect time. This eliminates the TOCTOU race that would otherwise exist between validation and connection.
 
-### Missing block ranges
+The resolver is injected via an interface (`policy.Resolver`), so tests use a fake resolver without real DNS.
 
-The current private-range blocklist also does not include:
+### Extended private ranges
+
+The private IP blocklist now covers:
 
 | Range | Description |
 |-------|-------------|
-| `fe80::/10` | IPv6 link-local |
-| `100.64.0.0/10` | CGNAT / RFC 6598 |
+| `10.0.0.0/8` | RFC 1918 |
+| `172.16.0.0/12` | RFC 1918 |
+| `192.168.0.0/16` | RFC 1918 |
+| `127.0.0.0/8` | IPv4 loopback |
+| `169.254.0.0/16` | IPv4 link-local / cloud metadata (169.254.169.254) |
+| `100.64.0.0/10` | CGNAT, RFC 6598 *(new)* |
+| `0.0.0.0/8` | Unspecified *(new)* |
+| `::1/128` | IPv6 loopback |
+| `fc00::/7` | IPv6 unique-local |
+| `fe80::/10` | IPv6 link-local *(new)* |
+| `::/128` | IPv6 unspecified *(new)* |
 
-Both ranges can reach internal infrastructure on many deployments.
+IPv4-mapped IPv6 addresses (e.g. `::ffff:192.168.1.1`) are unwrapped to their IPv4 form before the check.
 
-### Planned fix
+### Residual limitations
 
-Replace the exit executor's `http.Client` with one that uses a custom `net.Dialer` / `DialContext` hook. The hook resolves each target address and calls `policy.isPrivateIP` on every resolved IP before allowing the connection. This ensures the block applies to the actual address the OS will connect to, not the pre-resolution hostname.
+- The `SafeDialer` dials the first resolved IP. If the authoritative DNS returns multiple IPs and the first is public but subsequent IPs are private, the first-public selection will succeed. In practice, public forward DNS records do not include private IPs alongside public ones; this is a cosmetic limitation.
+- If an operator sets `BlockPrivateRanges = false`, no post-resolution check is performed and DNS rebinding is possible. **Operators should always set `BlockPrivateRanges = true` in exit mode.**
+- Operators should always configure a `domain_allow_list` to restrict which hostnames the exit node will contact.
 
-This fix is tracked as **GAP-02** in the implementation audit and is planned for the next security-focused PR.
+> **Summary:** With `BlockPrivateRanges = true` (the default in exit mode), DNS rebinding to private/loopback/CGNAT/link-local/metadata addresses is now blocked at the dial layer, not only at URL-string parse time.
+
+## Hop-by-Hop Header Stripping
+
+The exit executor strips all standard hop-by-hop headers before forwarding requests to upstream servers, per RFC 7230 §6.1. Removed headers:
+
+`Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `Proxy-Connection`, `TE`, `Trailer`, `Trailers`, `Transfer-Encoding`, `Upgrade`
+
+Additionally, any header names listed in the `Connection` header value are also removed before forwarding. End-to-end headers such as `Authorization`, `Cookie`, `User-Agent`, and `Accept` are preserved.
