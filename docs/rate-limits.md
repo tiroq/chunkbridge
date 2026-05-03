@@ -8,13 +8,15 @@ The table below reflects what is actually wired into the relay path today versus
 |---------|--------|
 | `TokenBucket` implementation | **Implemented** — unit-tested in `internal/ratelimit` |
 | `AdaptiveRateLimiter` (429 halving, backoff) | **Implemented** — unit-tested in `internal/ratelimit` |
-| Rate limiter wired into `relay.Session` hot path | **Not implemented yet** — no calls to `AllowData()` or `On429()` exist in relay, proxy, or exit |
+| Rate limiter wired into `relay.Session` send path | **Implemented** — every outbound DATA chunk waits for `AllowData()` before `Transport.Send` |
+| Rate limiter wired into `exit.HTTPExecutor` send path | **Implemented** — every outbound response chunk waits for `AllowData()` before `Transport.Send` |
+| Rate limiter built from config in CLI | **Implemented** — `buildRateLimiter` in `cmd/chunkbridge/main.go` creates an `AdaptiveRateLimiter` from `cfg.Limits` and passes it to both proxy session and exit executor |
 | ACK frames (`FrameACK`) | **Defined but not wired** — `NewACKFrame`/`IsACK` exist in `internal/protocol/ack.go` but are never called from session, relay, or exit |
 | WINDOW frames and sliding-window flow control | **Not implemented** — `WindowConfig` struct exists in config; no sliding-window logic exists in the relay path |
-| Retry-After / 429 handling in MAX transport | **Not implemented** — `BackoffDuration()` exists in `AdaptiveRateLimiter` but is never called from the transport layer |
+| Retry-After / 429 handling in MAX transport | **Not implemented** — `BackoffDuration()` and `On429()` exist in `AdaptiveRateLimiter` but are never called from the transport layer |
 | Control vs. data priority queues | **Not implemented** — all sends share one transport channel with no priority |
 
-> **Summary for operators:** The rate-limiting config fields (`ack`, `window`, `rate_limits`) are parsed and stored but have **no runtime effect** in the current version. All relay traffic is sent at memory speed with no throttling. These features are planned for a future release.
+> **Summary for operators:** DATA sends in `relay.Session` and `exit.HTTPExecutor` are now throttled by the configured rate limiter. All three token buckets (global, data, control) are created from config on startup. ACK, window, retry, and priority-queue features remain unimplemented.
 
 ---
 
@@ -30,9 +32,9 @@ chunkbridge uses a three-bucket token-bucket system to avoid overwhelming the un
 
 All sends check the `global` bucket **and** the appropriate per-type bucket. Both must have capacity.
 
-## Adaptive Behaviour on 429 Responses (Planned — not yet wired into relay path)
+## Adaptive Behaviour on 429 Responses (Partially wired — 429 feedback not yet connected)
 
-> **Note:** `AdaptiveRateLimiter` is implemented and unit-tested, but it is **not yet called** from the MAX transport or relay session. The behaviour below describes the intended design once it is wired in.
+> **Note:** `AdaptiveRateLimiter` is implemented, unit-tested, and now called from the relay send path. However, `On429()` is **not yet called** from the MAX transport or any other component — the 429 halving / backoff logic exists but is not triggered at runtime. This will be wired when MAX transport is fully implemented.
 
 When the transport layer receives a 429 (Too Many Requests) error:
 
@@ -43,7 +45,7 @@ When the transport layer receives a 429 (Too Many Requests) error:
 
 ## Configuration
 
-> **Note:** The `ack`, `window`, and `rate_limits` config fields are parsed but have **no runtime effect** in the current version. They represent the target configuration schema for planned features.
+> **Note:** The `ack` and `window` config fields are parsed but have **no runtime effect** in the current version. The `rate_limits` fields (`global_rps`, `data_rps`, `control_rps`, `burst`) **are now used** to build the runtime limiter in client and exit mode.
 
 ```yaml
 rate_limits:
