@@ -11,6 +11,27 @@ import (
 	"github.com/tiroq/chunkbridge/internal/transport"
 )
 
+// DataLimiter is satisfied by any token-bucket that gates DATA frame sends.
+// Both *ratelimit.TokenBucket and *ratelimit.AdaptiveRateLimiter implement it.
+type DataLimiter interface {
+	AllowData() bool
+}
+
+// WaitForToken blocks until the limiter grants a token or ctx is cancelled.
+// It sleeps 5 ms between polls to avoid busy-spinning.
+func WaitForToken(ctx context.Context, lim DataLimiter) error {
+	for {
+		if lim.AllowData() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
 // Session manages request/response correlation over a transport.
 // It sends frames and matches response frames back to waiting callers.
 type Session struct {
@@ -21,6 +42,7 @@ type Session struct {
 	mu          sync.Mutex
 	seqNum      atomic.Uint32
 	reassembler *protocol.Reassembler
+	limiter     DataLimiter // optional; nil disables throttling
 }
 
 // SessionID returns the session identifier for this Session.
@@ -35,6 +57,14 @@ func NewSession(sessionID string, t transport.Transport, key []byte) *Session {
 		pending:     make(map[string]chan *protocol.Frame),
 		reassembler: protocol.NewReassembler(60 * time.Second),
 	}
+}
+
+// WithRateLimiter returns a new Session with the given DataLimiter wired into
+// the send path. Every outbound DATA chunk will wait for a token before being
+// passed to Transport.Send.
+func (s *Session) WithRateLimiter(lim DataLimiter) *Session {
+	s.limiter = lim
+	return s
 }
 
 // Start begins reading from the transport and dispatching responses to pending
@@ -118,6 +148,11 @@ func (s *Session) sendFrame(ctx context.Context, frame *protocol.Frame) error {
 		text, err := protocol.EncodeMessage(&c, s.key)
 		if err != nil {
 			return fmt.Errorf("relay: encode: %w", err)
+		}
+		if s.limiter != nil {
+			if err := WaitForToken(ctx, s.limiter); err != nil {
+				return fmt.Errorf("relay: rate limit: %w", err)
+			}
 		}
 		if err := s.t.Send(ctx, transport.Message{Text: text}); err != nil {
 			return fmt.Errorf("relay: send: %w", err)
