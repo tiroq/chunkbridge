@@ -12,6 +12,8 @@ func DefaultClientConfig() Config {
 			Type: "memory",
 		},
 		Crypto: CryptoConfig{
+			PassphraseEnv: "CHUNKBRIDGE_SHARED_KEY",
+			Salt:          "saltchangeme1234", // 16 bytes — operators must replace this
 			Argon2Time:    1,
 			Argon2Mem:     64 * 1024,
 			Argon2Threads: 4,
