@@ -46,8 +46,12 @@ type HTTPProxy struct {
 // NewHTTPProxy creates an HTTPProxy that uses t for transport and key for encryption.
 func NewHTTPProxy(t transport.Transport, key []byte, cfg config.Config) *HTTPProxy {
 	sessionID := fmt.Sprintf("proxy-%d", time.Now().UnixNano())
+	sess := relay.NewSession(sessionID, t, key)
+	if cfg.Proxy.MaxConcurrentRequests > 0 {
+		sess.WithMaxPendingRequests(cfg.Proxy.MaxConcurrentRequests)
+	}
 	p := &HTTPProxy{
-		session: relay.NewSession(sessionID, t, key),
+		session: sess,
 		pol:     policy.New(cfg.Policy),
 		cfg:     cfg,
 		metrics: observability.NewMetrics(),
@@ -136,10 +140,15 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Payload:   payload,
 	}
 
-	resp, err := p.session.SendRequest(r.Context(), frame, 30*time.Second)
+	resp, err := p.session.SendRequest(r.Context(), frame, p.requestTimeout())
 	if err != nil {
 		p.metrics.ProxyErrors.Add(1)
 		p.log.Error("proxy: relay error", "err", err)
+		// Map "too many concurrent requests" to 429 Too Many Requests.
+		if err.Error() == "relay: too many concurrent requests" {
+			http.Error(w, "too many concurrent requests", http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, fmt.Sprintf("relay error: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -161,4 +170,13 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(w, bytes.NewReader(relResp.Body))
 	}
 	p.metrics.ProxyResponses.Add(1)
+}
+
+// requestTimeout returns the per-request relay timeout derived from config.
+// Falls back to 30 s when the config value is zero (e.g. in tests or selftest).
+func (p *HTTPProxy) requestTimeout() time.Duration {
+	if ms := p.cfg.Proxy.RequestTimeoutMs; ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return 30 * time.Second
 }
