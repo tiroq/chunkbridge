@@ -26,6 +26,21 @@ tasks:
     cmds:
       - go run ./cmd/chunkbridge selftest
 
+  fmt:
+    desc: Format all Go source files
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Run go vet (static analysis)
+    cmds:
+      - go vet ./...
+
+  test-race:
+    desc: Run all tests with the race detector
+    cmds:
+      - go test -race ./... -timeout 120s
+
   vet:
     desc: Run go vet
     cmds:
