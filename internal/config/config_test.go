@@ -367,3 +367,39 @@ func writeTempYAML(t *testing.T, content string) string {
 	}
 	return path
 }
+
+// --- Proxy config validation tests ---
+
+func TestValidateProxyZeroMaxConcurrentRequests(t *testing.T) {
+	cfg := validClient()
+	cfg.Proxy.MaxConcurrentRequests = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for MaxConcurrentRequests=0, got nil")
+	}
+}
+
+func TestValidateProxyNegativeMaxConcurrentRequests(t *testing.T) {
+	cfg := validClient()
+	cfg.Proxy.MaxConcurrentRequests = -1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for MaxConcurrentRequests=-1, got nil")
+	}
+}
+
+func TestValidateProxyZeroRequestTimeoutMs(t *testing.T) {
+	cfg := validClient()
+	cfg.Proxy.RequestTimeoutMs = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for RequestTimeoutMs=0, got nil")
+	}
+}
+
+func TestValidateProxyNotValidatedInExitMode(t *testing.T) {
+	// proxy fields are only validated in client mode.
+	cfg := validExit()
+	cfg.Proxy.MaxConcurrentRequests = 0
+	cfg.Proxy.RequestTimeoutMs = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("proxy fields should not be validated in exit mode, got: %v", err)
+	}
+}
