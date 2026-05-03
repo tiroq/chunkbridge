@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -32,6 +34,22 @@ type relayResponse struct {
 	Body       []byte              `json:"body,omitempty"`
 }
 
+// hopByHopHeaders lists headers that must not be forwarded to upstream servers
+// per RFC 7230 §6.1. Custom hop-by-hop headers named in the Connection header
+// are handled separately in handleRequest.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Proxy-Connection",
+	"TE",
+	"Trailer",
+	"Trailers",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
 // HTTPExecutor receives relay requests, makes outbound HTTP calls, and sends
 // the responses back via the transport.
 type HTTPExecutor struct {
@@ -49,12 +67,23 @@ type HTTPExecutor struct {
 
 // NewHTTPExecutor creates an HTTPExecutor using t as the transport.
 func NewHTTPExecutor(t transport.Transport, key []byte, cfg config.Config) *HTTPExecutor {
+	safeDialer := policy.NewSafeDialer(
+		net.DefaultResolver,
+		cfg.Policy.BlockPrivateRanges,
+	)
+	httpTransport := &http.Transport{
+		DialContext:         safeDialer.DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
 	return &HTTPExecutor{
-		t:           t,
-		key:         key,
-		pol:         policy.New(cfg.Policy),
-		cfg:         cfg,
-		client:      &http.Client{Timeout: time.Duration(cfg.Exit.RequestTimeoutSec) * time.Second},
+		t:   t,
+		key: key,
+		pol: policy.New(cfg.Policy),
+		cfg: cfg,
+		client: &http.Client{
+			Transport: httpTransport,
+			Timeout:   time.Duration(cfg.Exit.RequestTimeoutSec) * time.Second,
+		},
 		metrics:     observability.NewMetrics(),
 		log:         observability.NewLogger(cfg.Log.Level, cfg.Log.Format),
 		reassembler: protocol.NewReassembler(60 * time.Second),
@@ -121,9 +150,16 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 			httpReq.Header.Add(k, v)
 		}
 	}
-	// Remove proxy-specific headers.
-	httpReq.Header.Del("Proxy-Connection")
-	httpReq.Header.Del("Proxy-Authorization")
+	// Strip hop-by-hop headers before forwarding upstream per RFC 7230 §6.1.
+	// First, honour any custom hop-by-hop headers listed in the Connection header.
+	if conn := httpReq.Header.Get("Connection"); conn != "" {
+		for _, h := range strings.Split(conn, ",") {
+			httpReq.Header.Del(strings.TrimSpace(h))
+		}
+	}
+	for _, h := range hopByHopHeaders {
+		httpReq.Header.Del(h)
+	}
 
 	httpResp, err := e.client.Do(httpReq)
 	if err != nil {
