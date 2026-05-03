@@ -26,7 +26,7 @@ func Chunk(frame Frame, maxPayloadBytes int) []Frame {
 			end = len(frame.Payload)
 		}
 
-		c := frame                           // shallow copy
+		c := frame // shallow copy
 		c.Payload = make([]byte, end-start)
 		copy(c.Payload, frame.Payload[start:end])
 		c.TotalChunks = uint32(total)

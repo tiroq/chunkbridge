@@ -2,14 +2,14 @@ package config
 
 // Config is the top-level configuration struct.
 type Config struct {
-	Mode      string         `yaml:"mode"`
-	Listen    ListenConfig   `yaml:"listen"`
-	Transport TransportConfig `yaml:"transport"`
-	Crypto    CryptoConfig   `yaml:"crypto"`
+	Mode      string           `yaml:"mode"`
+	Listen    ListenConfig     `yaml:"listen"`
+	Transport TransportConfig  `yaml:"transport"`
+	Crypto    CryptoConfig     `yaml:"crypto"`
 	Limits    RateLimitsConfig `yaml:"rate_limits"`
-	Policy    PolicyConfig   `yaml:"policy"`
-	Exit      ExitConfig     `yaml:"exit"`
-	Log       LogConfig      `yaml:"log"`
+	Policy    PolicyConfig     `yaml:"policy"`
+	Exit      ExitConfig       `yaml:"exit"`
+	Log       LogConfig        `yaml:"log"`
 }
 
 // ListenConfig controls the local HTTP proxy listener.
@@ -43,27 +43,27 @@ type CryptoConfig struct {
 
 // RateLimitsConfig controls global and per-bucket rate limits.
 type RateLimitsConfig struct {
-	GlobalRPS  float64     `yaml:"global_rps"`
-	DataRPS    float64     `yaml:"data_rps"`
-	ControlRPS float64     `yaml:"control_rps"`
-	Burst      int         `yaml:"burst"`
+	GlobalRPS  float64       `yaml:"global_rps"`
+	DataRPS    float64       `yaml:"data_rps"`
+	ControlRPS float64       `yaml:"control_rps"`
+	Burst      int           `yaml:"burst"`
 	Message    MessageConfig `yaml:"message"`
-	Ack        AckConfig   `yaml:"ack"`
-	Window     WindowConfig `yaml:"window"`
+	Ack        AckConfig     `yaml:"ack"`
+	Window     WindowConfig  `yaml:"window"`
 }
 
 // MessageConfig controls message-level limits.
 type MessageConfig struct {
-	MaxChars     int `yaml:"max_chars"`
-	SafeChars    int `yaml:"safe_chars"`
-	MaxB64Chars  int `yaml:"max_b64_chars"`
+	MaxChars    int `yaml:"max_chars"`
+	SafeChars   int `yaml:"safe_chars"`
+	MaxB64Chars int `yaml:"max_b64_chars"`
 }
 
 // AckConfig controls acknowledgement behaviour.
 type AckConfig struct {
-	IntervalMs  int `yaml:"interval_ms"`
-	TimeoutMs   int `yaml:"timeout_ms"`
-	MaxRetries  int `yaml:"max_retries"`
+	IntervalMs int `yaml:"interval_ms"`
+	TimeoutMs  int `yaml:"timeout_ms"`
+	MaxRetries int `yaml:"max_retries"`
 }
 
 // WindowConfig controls the sliding window.

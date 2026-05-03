@@ -14,12 +14,12 @@ import (
 // Session manages request/response correlation over a transport.
 // It sends frames and matches response frames back to waiting callers.
 type Session struct {
-	sessionID string
-	t         transport.Transport
-	key       []byte
-	pending   map[string]chan *protocol.Frame
-	mu        sync.Mutex
-	seqNum    atomic.Uint32
+	sessionID   string
+	t           transport.Transport
+	key         []byte
+	pending     map[string]chan *protocol.Frame
+	mu          sync.Mutex
+	seqNum      atomic.Uint32
 	reassembler *protocol.Reassembler
 }
 
