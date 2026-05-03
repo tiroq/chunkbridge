@@ -30,9 +30,9 @@ type Metrics struct {
 	ExitErrors    atomic.Int64
 
 	// Rate limiting
-	RateLimitHits   atomic.Int64
-	Backoffs        atomic.Int64
-	RateLimitOn429  atomic.Int64
+	RateLimitHits  atomic.Int64
+	Backoffs       atomic.Int64
+	RateLimitOn429 atomic.Int64
 }
 
 // NewMetrics creates a zeroed Metrics struct.
