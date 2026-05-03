@@ -1,6 +1,7 @@
 package policy_test
 
 import (
+	"net"
 	"testing"
 
 	"github.com/tiroq/chunkbridge/internal/config"
@@ -87,5 +88,58 @@ func TestEmptyAllowListPermitsAll(t *testing.T) {
 	})
 	if err := p.CheckRequest("http://anything.example.com/"); err != nil {
 		t.Errorf("expected allow with empty domain list: %v", err)
+	}
+}
+
+func TestPrivateIP_CGNATBlocked(t *testing.T) {
+	p := newPolicy(config.PolicyConfig{
+		BlockPrivateRanges: true,
+		AllowedSchemes:     []string{"http", "https"},
+	})
+	cases := []string{
+		"http://100.64.0.1/",
+		"http://100.64.255.255/",
+		"http://100.127.255.255/",
+	}
+	for _, tc := range cases {
+		if err := p.CheckRequest(tc); err == nil {
+			t.Errorf("expected CGNAT address to be blocked: %s", tc)
+		}
+	}
+}
+
+func TestPrivateIP_IPv6LinkLocalBlocked(t *testing.T) {
+	p := newPolicy(config.PolicyConfig{
+		BlockPrivateRanges: true,
+		AllowedSchemes:     []string{"http", "https"},
+	})
+	cases := []string{
+		"http://[fe80::1]/",
+		"http://[fe80::dead:beef]/",
+	}
+	for _, tc := range cases {
+		if err := p.CheckRequest(tc); err == nil {
+			t.Errorf("expected IPv6 link-local address to be blocked: %s", tc)
+		}
+	}
+}
+
+func TestIsPrivateIP_Unspecified(t *testing.T) {
+	if !policy.IsPrivateIP(net.ParseIP("0.0.0.0")) {
+		t.Error("expected 0.0.0.0 to be private")
+	}
+	if !policy.IsPrivateIP(net.ParseIP("::")) {
+		t.Error("expected :: to be private")
+	}
+}
+
+func TestIsPrivateIP_IPv4MappedIPv6(t *testing.T) {
+	// ::ffff:192.168.1.1 is an IPv4-mapped IPv6 address — should be blocked.
+	ip := net.ParseIP("::ffff:192.168.1.1")
+	if ip == nil {
+		t.Fatal("failed to parse ::ffff:192.168.1.1")
+	}
+	if !policy.IsPrivateIP(ip) {
+		t.Error("expected IPv4-mapped IPv6 private address to be blocked")
 	}
 }
