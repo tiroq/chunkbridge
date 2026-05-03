@@ -16,6 +16,7 @@ import (
 	"github.com/tiroq/chunkbridge/internal/observability"
 	"github.com/tiroq/chunkbridge/internal/policy"
 	"github.com/tiroq/chunkbridge/internal/protocol"
+	"github.com/tiroq/chunkbridge/internal/relay"
 	"github.com/tiroq/chunkbridge/internal/transport"
 )
 
@@ -63,6 +64,14 @@ type HTTPExecutor struct {
 	seqNum      atomic.Uint32
 	reassembler *protocol.Reassembler
 	sessionID   string
+	limiter     relay.DataLimiter // optional; nil disables throttling
+}
+
+// WithRateLimiter returns the executor with the given DataLimiter wired into
+// the response send path. Every outbound DATA chunk will wait for a token.
+func (e *HTTPExecutor) WithRateLimiter(lim relay.DataLimiter) *HTTPExecutor {
+	e.limiter = lim
+	return e
 }
 
 // NewHTTPExecutor creates an HTTPExecutor using t as the transport.
@@ -246,6 +255,11 @@ func (e *HTTPExecutor) sendFrame(ctx context.Context, frame *protocol.Frame) err
 		text, err := protocol.EncodeMessage(&c, e.key)
 		if err != nil {
 			return fmt.Errorf("exit: encode: %w", err)
+		}
+		if e.limiter != nil {
+			if err := relay.WaitForToken(ctx, e.limiter); err != nil {
+				return fmt.Errorf("exit: rate limit: %w", err)
+			}
 		}
 		if err := e.t.Send(ctx, transport.Message{Text: text}); err != nil {
 			return fmt.Errorf("exit: send: %w", err)

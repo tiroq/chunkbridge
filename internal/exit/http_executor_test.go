@@ -1,4 +1,3 @@
-package exit
 package exit_test
 
 import (
@@ -18,6 +17,7 @@ import (
 	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
 	"github.com/tiroq/chunkbridge/internal/protocol"
+	"github.com/tiroq/chunkbridge/internal/relay"
 	"github.com/tiroq/chunkbridge/internal/transport"
 )
 
@@ -344,3 +344,102 @@ func TestExitPrivateLiteralIPBlocked(t *testing.T) {
 // Ensure the test helper compiles even if containsString is not called elsewhere.
 var _ = containsString
 var _ = bytes.NewReader
+
+// --- Rate limiter tests ---
+
+// exitTickLimiter grants one DATA token per interval.
+type exitTickLimiter struct {
+	interval time.Duration
+	last     time.Time
+}
+
+func (l *exitTickLimiter) AllowData() bool {
+	now := time.Now()
+	if l.last.IsZero() || now.Sub(l.last) >= l.interval {
+		l.last = now
+		return true
+	}
+	return false
+}
+
+// startExecutorWithLimiter is like startExecutor but wires a DataLimiter into
+// the executor's response send path.
+func startExecutorWithLimiter(
+	t *testing.T,
+	key []byte,
+	cfg config.Config,
+	lim relay.DataLimiter,
+) (*transport.MemoryTransport, context.CancelFunc) {
+	t.Helper()
+	clientT, exitT := transport.NewMemoryPair(transport.MemoryOptions{})
+	executor := exit.NewHTTPExecutor(exitT, key, cfg).WithRateLimiter(lim)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = executor.Run(ctx) }()
+	time.Sleep(10 * time.Millisecond)
+	return clientT, cancel
+}
+
+// TestHTTPExecutorSendFrameUsesRateLimiter verifies that a slow limiter causes
+// response chunk sends to take measurably longer than with no limiter.
+func TestHTTPExecutorSendFrameUsesRateLimiter(t *testing.T) {
+	// Upstream server returns a payload large enough to generate multiple chunks
+	// (~4 KB payload splits into a few 1600-byte encoded chunks).
+	bigPayload := bytes.Repeat([]byte("x"), 4*1024)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write(bigPayload)
+	}))
+	defer ts.Close()
+
+	key := testKey(t)
+	cfg := config.DefaultExitConfig()
+	cfg.Policy.BlockPrivateRanges = false
+
+	// Allow one token per 25 ms. With ~4 chunks, we should wait at least 3 * 25 ms = 75 ms.
+	lim := &exitTickLimiter{interval: 25 * time.Millisecond}
+
+	clientT, cancel := startExecutorWithLimiter(t, key, cfg, lim)
+	defer cancel()
+
+	start := time.Now()
+	resp := sendRelayRequest(t, key, clientT, relayRequest{
+		Method: "GET",
+		URL:    ts.URL + "/",
+	})
+	elapsed := time.Since(start)
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Conservative threshold: at least 50 ms due to rate limiting.
+	const minElapsed = 50 * time.Millisecond
+	if elapsed < minElapsed {
+		t.Errorf("expected elapsed >= %v with rate limiter; got %v", minElapsed, elapsed)
+	}
+}
+
+// TestHTTPExecutorNilLimiterUnchanged verifies that an executor without a
+// limiter returns quickly (baseline: no artificial throttling).
+func TestHTTPExecutorNilLimiterUnchanged(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	key := testKey(t)
+	cfg := config.DefaultExitConfig()
+	cfg.Policy.BlockPrivateRanges = false
+
+	clientT, cancel := startExecutor(t, key, cfg)
+	defer cancel()
+
+	resp := sendRelayRequest(t, key, clientT, relayRequest{
+		Method: "GET",
+		URL:    ts.URL + "/",
+	})
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
