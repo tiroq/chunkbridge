@@ -68,3 +68,30 @@ ciphertext = XChaCha20-Poly1305.Seal(nonce, compressed, aad)
 encoded    = base64.StdEncoding(nonce || ciphertext)
 message    = "CB1|D|" + sessionID + "|" + seqNum + "|" + encoded
 ```
+
+## Request Lifecycle and Concurrency
+
+### Bounded pending request map
+
+`relay.Session` maintains a `pending` map (requestID → response channel). Each call to `SendRequest` inserts a channel and removes it on return, regardless of how the call exits (success, timeout, context cancellation, send error).
+
+Without a limit, a slow exit node or adversarial conditions could cause the pending map to grow without bound. To prevent this:
+
+- **`proxy.max_concurrent_requests`** (default: **64**) caps the number of simultaneous in-flight requests per session.
+- When the limit is reached, `SendRequest` returns immediately with `relay: too many concurrent requests`.
+- The proxy maps this to **HTTP 429 Too Many Requests** to the local HTTP client.
+- Late responses that arrive after a request has timed out or been cancelled are silently dropped; they do not panic or corrupt state.
+
+This is **not** full flow-control or a sliding window. It is a simple head-of-line protection against unbounded memory growth.
+
+### Per-request timeout
+
+`proxy.request_timeout_ms` (default: **30000 ms**) is used by the proxy as the deadline for each `SendRequest`. A request that receives no response within this window is abandoned with `relay: timeout ...`, and the proxy returns **HTTP 502 Bad Gateway**.
+
+### What this PR does NOT implement
+
+- ACK-based reliable delivery
+- Sliding window (WINDOW frames)
+- Retry / resend on failure
+- Priority queues (control vs. data)
+- Back-pressure from the exit node to the client

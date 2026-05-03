@@ -11,12 +11,14 @@ The table below reflects what is actually wired into the relay path today versus
 | Rate limiter wired into `relay.Session` send path | **Implemented** — every outbound DATA chunk waits for `AllowData()` before `Transport.Send` |
 | Rate limiter wired into `exit.HTTPExecutor` send path | **Implemented** — every outbound response chunk waits for `AllowData()` before `Transport.Send` |
 | Rate limiter built from config in CLI | **Implemented** — `buildRateLimiter` in `cmd/chunkbridge/main.go` creates an `AdaptiveRateLimiter` from `cfg.Limits` and passes it to both proxy session and exit executor |
+| Bounded concurrent pending requests (`proxy.max_concurrent_requests`) | **Implemented** — default 64; overflow returns `relay: too many concurrent requests` → HTTP 429 |
+| Per-request relay timeout (`proxy.request_timeout_ms`) | **Implemented** — default 30 000 ms; timeout returns HTTP 502 Bad Gateway |
 | ACK frames (`FrameACK`) | **Defined but not wired** — `NewACKFrame`/`IsACK` exist in `internal/protocol/ack.go` but are never called from session, relay, or exit |
 | WINDOW frames and sliding-window flow control | **Not implemented** — `WindowConfig` struct exists in config; no sliding-window logic exists in the relay path |
 | Retry-After / 429 handling in MAX transport | **Not implemented** — `BackoffDuration()` and `On429()` exist in `AdaptiveRateLimiter` but are never called from the transport layer |
 | Control vs. data priority queues | **Not implemented** — all sends share one transport channel with no priority |
 
-> **Summary for operators:** DATA sends in `relay.Session` and `exit.HTTPExecutor` are now throttled by the configured rate limiter. All three token buckets (global, data, control) are created from config on startup. ACK, window, retry, and priority-queue features remain unimplemented.
+> **Summary for operators:** DATA sends in `relay.Session` and `exit.HTTPExecutor` are throttled by the configured rate limiter. Concurrent in-flight requests are capped at `proxy.max_concurrent_requests` (default 64) with a 429 response on overflow. Per-request timeouts are enforced via `proxy.request_timeout_ms` (default 30 s). ACK, window, retry, and priority-queue features remain unimplemented.
 
 ---
 
