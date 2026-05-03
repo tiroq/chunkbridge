@@ -43,6 +43,7 @@ type Session struct {
 	seqNum      atomic.Uint32
 	reassembler *protocol.Reassembler
 	limiter     DataLimiter // optional; nil disables throttling
+	maxPending  int         // 0 = unlimited (legacy); >0 = bounded
 }
 
 // SessionID returns the session identifier for this Session.
@@ -64,6 +65,16 @@ func NewSession(sessionID string, t transport.Transport, key []byte) *Session {
 // passed to Transport.Send.
 func (s *Session) WithRateLimiter(lim DataLimiter) *Session {
 	s.limiter = lim
+	return s
+}
+
+// WithMaxPendingRequests limits how many concurrent in-flight requests the
+// session will accept. If n <= 0 the limit is disabled (existing behaviour).
+// When the limit is reached, SendRequest returns immediately with:
+//
+//	relay: too many concurrent requests
+func (s *Session) WithMaxPendingRequests(n int) *Session {
+	s.maxPending = n
 	return s
 }
 
@@ -111,10 +122,18 @@ func (s *Session) dispatch(frame *protocol.Frame) {
 // SendRequest encodes and sends all chunks of frame, then waits for a response.
 func (s *Session) SendRequest(ctx context.Context, frame *protocol.Frame, timeout time.Duration) (*protocol.Frame, error) {
 	// Register the response channel before sending.
+	// Check the concurrency limit atomically with the insert.
 	ch := make(chan *protocol.Frame, 1)
 	s.mu.Lock()
+	if s.maxPending > 0 && len(s.pending) >= s.maxPending {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("relay: too many concurrent requests")
+	}
 	s.pending[frame.RequestID] = ch
 	s.mu.Unlock()
+
+	// Always remove the pending entry when this call returns, regardless of
+	// how it exits (success, timeout, context cancel, send error).
 	defer func() {
 		s.mu.Lock()
 		delete(s.pending, frame.RequestID)
