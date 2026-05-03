@@ -56,6 +56,12 @@ func NewHTTPProxy(t transport.Transport, key []byte, cfg config.Config) *HTTPPro
 	return p
 }
 
+// WithRateLimiter wires a DataLimiter into the proxy's relay session so that
+// every outbound DATA chunk is throttled. Call before Serve.
+func (p *HTTPProxy) WithRateLimiter(lim relay.DataLimiter) {
+	p.session.WithRateLimiter(lim)
+}
+
 // Serve starts accepting connections on ln and blocks until ln is closed.
 // It also starts the background response dispatcher.
 func (p *HTTPProxy) Serve(ln net.Listener) error {
