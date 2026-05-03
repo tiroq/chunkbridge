@@ -38,6 +38,16 @@ cp .example.chunkbridge.exit.yaml   chunkbridge.exit.yaml
 
 Set a strong, shared `passphrase` and `salt` in both files.
 
+**Config is validated at startup.** The binary exits immediately with a clear `config:` error if any required field is wrong. Key validation rules:
+
+| Field | Requirement |
+|-------|-------------|
+| `crypto.salt` | Exactly 16 bytes. Replace the placeholder `saltchangeme1234`. |
+| `crypto.passphrase_env` | Must name the environment variable holding the shared passphrase. |
+| `listen.address` (client) | Must bind to loopback (`127.0.0.1` or `::1`). Wildcard addresses are rejected. |
+| `transport.type` | Must be `max` or `memory`. `memory` is for selftest/in-process integration only — using it in standalone `client` or `exit` mode will fail at startup with a clear error. |
+| Empty `domain_allow_list` | Permitted but means **all outbound domains are reachable** from the exit node. Restrict this for production use.
+
 ## Running
 
 ```bash
