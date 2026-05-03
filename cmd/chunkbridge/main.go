@@ -17,6 +17,7 @@ import (
 	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
 	"github.com/tiroq/chunkbridge/internal/proxy"
+	"github.com/tiroq/chunkbridge/internal/ratelimit"
 	"github.com/tiroq/chunkbridge/internal/transport"
 )
 
@@ -81,7 +82,11 @@ func runClient() {
 	}
 	defer t.Close()
 
+	lim := buildRateLimiter(cfg)
 	p := proxy.NewHTTPProxy(t, key, *cfg)
+	if lim != nil {
+		p.WithRateLimiter(lim)
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen.Address, cfg.Listen.Port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -123,7 +128,11 @@ func runExit() {
 	}
 	defer t.Close()
 
+	lim := buildRateLimiter(cfg)
 	executor := exit.NewHTTPExecutor(t, key, *cfg)
+	if lim != nil {
+		executor.WithRateLimiter(lim)
+	}
 	fmt.Println("chunkbridge exit node running")
 	ctx := context.Background()
 	if err := executor.Run(ctx); err != nil {
@@ -292,6 +301,16 @@ func waitForListener(addr string) error {
 		time.Sleep(5 * time.Millisecond)
 	}
 	return fmt.Errorf("proxy listener at %s did not start within 3s", addr)
+}
+
+// buildRateLimiter creates an AdaptiveRateLimiter from config when the rates are
+// positive. Returns nil when all rates are zero (disables throttling).
+func buildRateLimiter(cfg *config.Config) *ratelimit.AdaptiveRateLimiter {
+	l := cfg.Limits
+	if l.GlobalRPS <= 0 || l.DataRPS <= 0 || l.ControlRPS <= 0 || l.Burst <= 0 {
+		return nil
+	}
+	return ratelimit.NewAdaptiveRateLimiter(l.GlobalRPS, l.DataRPS, l.ControlRPS, l.Burst)
 }
 
 func buildTransport(cfg *config.Config) (transport.Transport, error) {
