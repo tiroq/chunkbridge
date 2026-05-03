@@ -8,6 +8,10 @@ func DefaultClientConfig() Config {
 			Address: "127.0.0.1",
 			Port:    8080,
 		},
+		Proxy: ProxyConfig{
+			MaxConcurrentRequests: 64,
+			RequestTimeoutMs:      30000,
+		},
 		Transport: TransportConfig{
 			Type: "memory",
 		},

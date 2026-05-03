@@ -4,6 +4,7 @@ package config
 type Config struct {
 	Mode      string           `yaml:"mode"`
 	Listen    ListenConfig     `yaml:"listen"`
+	Proxy     ProxyConfig      `yaml:"proxy"`
 	Transport TransportConfig  `yaml:"transport"`
 	Crypto    CryptoConfig     `yaml:"crypto"`
 	Limits    RateLimitsConfig `yaml:"rate_limits"`
@@ -16,6 +17,16 @@ type Config struct {
 type ListenConfig struct {
 	Address string `yaml:"address"`
 	Port    int    `yaml:"port"`
+}
+
+// ProxyConfig controls client-proxy-side request lifecycle settings.
+type ProxyConfig struct {
+	// MaxConcurrentRequests limits the number of in-flight pending requests
+	// in the relay session. Zero or negative means unlimited (legacy).
+	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
+	// RequestTimeoutMs is the per-request relay timeout in milliseconds.
+	// Zero falls back to the hard-coded 30 s default.
+	RequestTimeoutMs int `yaml:"request_timeout_ms"`
 }
 
 // TransportConfig selects and configures the message transport.

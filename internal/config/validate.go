@@ -20,6 +20,9 @@ func (c *Config) Validate() error {
 		if err := c.validateListen(); err != nil {
 			return err
 		}
+		if err := c.validateProxy(); err != nil {
+			return err
+		}
 	}
 	if err := c.validatePolicy(); err != nil {
 		return err
@@ -175,6 +178,16 @@ func (c *Config) validateAckConfig() error {
 	}
 	if a.MaxRetries < 0 {
 		return fmt.Errorf("config: ack.max_retries must be >= 0")
+	}
+	return nil
+}
+
+func (c *Config) validateProxy() error {
+	if c.Proxy.MaxConcurrentRequests <= 0 {
+		return fmt.Errorf("config: proxy.max_concurrent_requests must be greater than zero")
+	}
+	if c.Proxy.RequestTimeoutMs <= 0 {
+		return fmt.Errorf("config: proxy.request_timeout_ms must be greater than zero")
 	}
 	return nil
 }
