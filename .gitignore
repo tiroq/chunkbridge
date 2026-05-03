@@ -1,0 +1,22 @@
+# Binaries
+bin/
+*.exe
+
+# Go build cache
+*.test
+*.out
+
+# Config files with real credentials (keep examples)
+chunkbridge.client.yaml
+chunkbridge.exit.yaml
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+coverage.out
+coverage.html
