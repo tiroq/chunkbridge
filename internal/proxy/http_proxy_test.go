@@ -1,4 +1,3 @@
-package proxy
 package proxy_test
 
 import (
@@ -12,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/config"
+	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
 	"github.com/tiroq/chunkbridge/internal/proxy"
 	"github.com/tiroq/chunkbridge/internal/transport"
@@ -93,7 +92,6 @@ func TestHTTPProxyConcurrentLimitReturns429(t *testing.T) {
 		_, _ = io.WriteString(w, "ok")
 	}))
 	defer ts.Close()
-	defer close(release) // ensure server goroutine unblocks on test exit
 
 	proxyCfg := config.DefaultClientConfig()
 	proxyCfg.Proxy.MaxConcurrentRequests = 1
@@ -141,7 +139,8 @@ func TestHTTPProxyConcurrentLimitReturns429(t *testing.T) {
 		t.Errorf("expected 429, got %d (body: %q)", resp.StatusCode, body)
 	}
 
-	// Let the blocked request complete.
+	// Release the blocked first request and wait for it to complete.
+	close(release)
 	wg.Wait()
 }
 
