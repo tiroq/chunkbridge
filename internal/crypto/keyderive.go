@@ -29,16 +29,18 @@ func DeriveKey(passphrase, salt []byte, params DeriveParams) ([]byte, error) {
 	if len(salt) != argon2SaltLen {
 		return nil, fmt.Errorf("keyderive: salt must be exactly %d bytes, got %d", argon2SaltLen, len(salt))
 	}
-	if params.Time == 0 {
-		params.Time = DefaultDeriveParams.Time
+	// Apply defaults to a local copy so the caller's struct is not mutated.
+	p := params
+	if p.Time == 0 {
+		p.Time = DefaultDeriveParams.Time
 	}
-	if params.Memory == 0 {
-		params.Memory = DefaultDeriveParams.Memory
+	if p.Memory == 0 {
+		p.Memory = DefaultDeriveParams.Memory
 	}
-	if params.Threads == 0 {
-		params.Threads = DefaultDeriveParams.Threads
+	if p.Threads == 0 {
+		p.Threads = DefaultDeriveParams.Threads
 	}
-	key := argon2.IDKey(passphrase, salt, params.Time, params.Memory, params.Threads, argon2KeyLen)
+	key := argon2.IDKey(passphrase, salt, p.Time, p.Memory, p.Threads, argon2KeyLen)
 	return key, nil
 }
 

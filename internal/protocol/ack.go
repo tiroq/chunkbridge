@@ -13,6 +13,8 @@ type AckFrame struct {
 // extract the acknowledged sequence number.
 func NewACKFrame(sessionID string, ackToSeq uint32, seq uint32) *Frame {
 	af := AckFrame{SessionID: sessionID, AckTo: ackToSeq}
+	// json.Marshal of a plain struct with only string and uint32 fields never
+	// fails; the error is intentionally not propagated here.
 	payload, _ := json.Marshal(af)
 	return &Frame{
 		Version:     1,

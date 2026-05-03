@@ -260,7 +260,7 @@ func deriveKey(cfg *config.Config) ([]byte, error) {
 	}
 	salt := cfg.Crypto.Salt
 	if salt == "" {
-		return nil, fmt.Errorf("crypto.salt must be set in config (exactly 16 bytes)")
+		return nil, fmt.Errorf("crypto.salt must be set in config")
 	}
 	saltBytes := []byte(salt)
 	params := cbcrypto.DeriveParams{
