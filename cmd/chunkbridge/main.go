@@ -13,8 +13,8 @@ import (
 	"os"
 	"time"
 
-	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/config"
+	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
 	"github.com/tiroq/chunkbridge/internal/proxy"
 	"github.com/tiroq/chunkbridge/internal/transport"
