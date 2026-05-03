@@ -1,0 +1,46 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the chunkbridge binary
+    cmds:
+      - go build -o bin/chunkbridge ./cmd/chunkbridge
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./... -timeout 120s
+
+  test-unit:
+    desc: Run unit tests only
+    cmds:
+      - go test ./internal/... -timeout 60s
+
+  test-integration:
+    desc: Run integration tests only
+    cmds:
+      - go test ./tests/integration/... -timeout 60s -v
+
+  selftest:
+    desc: Run the built-in selftest
+    cmds:
+      - go run ./cmd/chunkbridge selftest
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Run go mod tidy
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin/
+
+  all:
+    desc: Build and test
+    deps: [build, vet, test]
