@@ -1,3 +1,4 @@
+package proxy
 package proxy_test
 
 import (
