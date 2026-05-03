@@ -60,19 +60,23 @@ func runClient() {
 	}
 	cfg, err := config.LoadFile(cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
 	key, err := deriveKey(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "crypto: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
 	t, err := buildTransport(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "transport: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 	defer t.Close()
@@ -98,19 +102,23 @@ func runExit() {
 	}
 	cfg, err := config.LoadFile(cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
 	key, err := deriveKey(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "crypto: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
 	t, err := buildTransport(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "transport: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 	defer t.Close()
@@ -256,7 +264,7 @@ func deriveKey(cfg *config.Config) ([]byte, error) {
 	}
 	passphrase := os.Getenv(envName)
 	if passphrase == "" {
-		return nil, fmt.Errorf("env var %q is not set or empty; set it to the shared passphrase", envName)
+		return nil, fmt.Errorf("config: environment variable %s is not set", envName)
 	}
 	salt := cfg.Crypto.Salt
 	if salt == "" {
@@ -291,7 +299,12 @@ func buildTransport(cfg *config.Config) (transport.Transport, error) {
 	case "max":
 		mc := cfg.Transport.Max
 		return transport.NewMaxTransport(mc.TokenEnv, mc.FromHandle, mc.ToHandle)
+	case "memory":
+		// MemoryTransport is an in-process paired transport; it cannot connect
+		// two independent processes. Use it via selftest or integration tests only.
+		return nil, fmt.Errorf("transport: memory transport is only available for selftest/in-process integration, not for standalone client or exit mode")
 	default:
-		return nil, fmt.Errorf("transport type %q is not available in standalone mode (use selftest for in-process testing)", cfg.Transport.Type)
+		// Should not reach here if cfg.Validate() was called first.
+		return nil, fmt.Errorf("transport: unknown transport type %q", cfg.Transport.Type)
 	}
 }
