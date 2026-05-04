@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -57,6 +58,9 @@ func NewHTTPProxy(t transport.Transport, key []byte, cfg config.Config) *HTTPPro
 		metrics: observability.NewMetrics(),
 		log:     observability.NewLogger(cfg.Log.Level, cfg.Log.Format),
 	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", p.ServeHTTP)
+	p.server = &http.Server{Handler: mux}
 	return p
 }
 
@@ -77,13 +81,15 @@ func (p *HTTPProxy) Serve(ln net.Listener) error {
 		cancel()
 	}()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", p.ServeHTTP)
-	p.server = &http.Server{Handler: mux}
-
 	err := p.server.Serve(ln)
 	cancel()
 	return err
+}
+
+// Shutdown gracefully stops the HTTP server, waiting up to the deadline in ctx
+// for in-flight requests to complete.
+func (p *HTTPProxy) Shutdown(ctx context.Context) error {
+	return p.server.Shutdown(ctx)
 }
 
 // ServeHTTP handles a single proxied HTTP request.
@@ -144,7 +150,13 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		p.metrics.ProxyErrors.Add(1)
 		p.log.Error("proxy: relay error", "err", err)
-		// Map "too many concurrent requests" to 429 Too Many Requests.
+		// Structured error sent by the exit node via FrameERROR.
+		var relErr *relay.RelayError
+		if errors.As(err, &relErr) {
+			http.Error(w, relErr.Message, relErr.HTTPStatus)
+			return
+		}
+		// Concurrency limit (local, no relay round-trip).
 		if err.Error() == "relay: too many concurrent requests" {
 			http.Error(w, "too many concurrent requests", http.StatusTooManyRequests)
 			return

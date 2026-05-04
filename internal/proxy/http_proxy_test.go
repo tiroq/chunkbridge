@@ -188,3 +188,159 @@ func TestHTTPProxyRequestTimeoutReturns502(t *testing.T) {
 		t.Errorf("expected timeout within ~80 ms, took %v", elapsed)
 	}
 }
+
+// TestHTTPProxyMapsPolicyErrorTo403 verifies that when the exit node rejects a
+// request due to policy (private IP blocked), the proxy returns HTTP 403.
+func TestHTTPProxyMapsPolicyErrorTo403(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	proxyCfg := config.DefaultClientConfig()
+	// Disable client-side policy check so the request reaches the exit.
+	proxyCfg.Policy.BlockPrivateRanges = false
+
+	exitCfg := config.DefaultExitConfig()
+	exitCfg.Policy.BlockPrivateRanges = true // exit blocks private IPs
+
+	addr, teardown := startProxyWithConfig(t, proxyCfg, exitCfg)
+	defer teardown()
+
+	proxyURL, _ := url.Parse("http://" + addr)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   5 * time.Second,
+	}
+
+	resp, err := client.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected 403, got %d (body: %q)", resp.StatusCode, body)
+	}
+}
+
+// TestHTTPProxyMapsUpstreamUnavailableTo502 verifies that when the exit cannot
+// connect to the upstream server, the proxy returns HTTP 502.
+func TestHTTPProxyMapsUpstreamUnavailableTo502(t *testing.T) {
+	// Start a server and immediately close it so connections are refused.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unavailableURL := ts.URL
+	ts.Close() // close immediately — subsequent connections will be refused
+
+	proxyCfg := config.DefaultClientConfig()
+	proxyCfg.Policy.BlockPrivateRanges = false
+
+	exitCfg := config.DefaultExitConfig()
+	exitCfg.Policy.BlockPrivateRanges = false
+
+	addr, teardown := startProxyWithConfig(t, proxyCfg, exitCfg)
+	defer teardown()
+
+	proxyURL, _ := url.Parse("http://" + addr)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   10 * time.Second,
+	}
+
+	resp, err := client.Get(unavailableURL + "/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected 502, got %d (body: %q)", resp.StatusCode, body)
+	}
+}
+
+// TestHTTPProxyMapsUpstreamTimeoutTo504 verifies that when the upstream server
+// does not respond within the exit's request timeout, the proxy returns HTTP 504.
+func TestHTTPProxyMapsUpstreamTimeoutTo504(t *testing.T) {
+	block := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block
+	}))
+	defer ts.Close()
+	defer close(block)
+
+	proxyCfg := config.DefaultClientConfig()
+	proxyCfg.Policy.BlockPrivateRanges = false
+	// Give the proxy plenty of time so it waits for the exit error frame.
+	proxyCfg.Proxy.RequestTimeoutMs = 5000
+
+	exitCfg := config.DefaultExitConfig()
+	exitCfg.Policy.BlockPrivateRanges = false
+	exitCfg.Exit.RequestTimeoutSec = 1 // exit times out after 1 s
+
+	addr, teardown := startProxyWithConfig(t, proxyCfg, exitCfg)
+	defer teardown()
+
+	proxyURL, _ := url.Parse("http://" + addr)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   10 * time.Second,
+	}
+
+	resp, err := client.Get(ts.URL + "/slow")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected 504, got %d (body: %q)", resp.StatusCode, body)
+	}
+}
+
+// TestHTTPProxyShutdownStopsServer verifies that Shutdown causes the proxy to
+// stop accepting new connections and that p.Serve returns http.ErrServerClosed.
+func TestHTTPProxyShutdownStopsServer(t *testing.T) {
+	key := proxyTestKey(t)
+	ct, et := transport.NewMemoryPair(transport.MemoryOptions{})
+	defer ct.Close()
+	defer et.Close()
+
+	cfg := config.DefaultClientConfig()
+	p := proxy.NewHTTPProxy(ct, key, cfg)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- p.Serve(ln) }()
+	waitForProxyListener(t, addr)
+
+	// Trigger graceful shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := p.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	select {
+	case err := <-serveErr:
+		if err != nil && err.Error() != "http: Server closed" {
+			t.Errorf("Serve: unexpected error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("Serve did not return after Shutdown")
+	}
+
+	// New connections should be refused.
+	conn, dialErr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+	if dialErr == nil {
+		conn.Close()
+		t.Error("expected connection refused after shutdown, but dial succeeded")
+	}
+}
