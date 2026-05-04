@@ -9,6 +9,7 @@ type Config struct {
 	Crypto    CryptoConfig     `yaml:"crypto"`
 	Limits    RateLimitsConfig `yaml:"rate_limits"`
 	Policy    PolicyConfig     `yaml:"policy"`
+	Cache     CacheConfig      `yaml:"cache"`
 	Exit      ExitConfig       `yaml:"exit"`
 	Log       LogConfig        `yaml:"log"`
 }
@@ -124,4 +125,34 @@ type ExitConfig struct {
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"` // "json" | "text"
+}
+
+// CacheConfig controls the client-side in-memory HTTP response cache.
+// The cache is disabled by default and only applies in client/proxy mode.
+type CacheConfig struct {
+	// Enabled activates the in-memory response cache. Default: false.
+	Enabled bool `yaml:"enabled"`
+	// MaxEntries is the maximum number of responses kept in the cache.
+	// Required when enabled. Default: 512.
+	MaxEntries int `yaml:"max_entries"`
+	// MaxBytes is the maximum total body bytes stored across all entries.
+	// Required when enabled. Default: 67108864 (64 MiB).
+	MaxBytes int64 `yaml:"max_bytes"`
+	// MaxEntryBytes is the maximum body size of a single cacheable response.
+	// Responses larger than this are not stored. Required when enabled.
+	// Default: 2097152 (2 MiB).
+	MaxEntryBytes int64 `yaml:"max_entry_bytes"`
+	// DefaultTTLSeconds is applied to static-looking paths (CSS, JS, images,
+	// etc.) when the response carries no explicit Cache-Control or Expires
+	// header. Set to 0 to disable heuristic caching. Default: 300.
+	DefaultTTLSeconds int `yaml:"default_ttl_seconds"`
+	// CachePrivate allows caching of responses marked Cache-Control: private.
+	// Default: false.
+	CachePrivate bool `yaml:"cache_private"`
+	// CacheWithCookies allows caching requests that carry a Cookie header.
+	// Default: false.
+	CacheWithCookies bool `yaml:"cache_with_cookies"`
+	// CacheWithAuthorization allows caching requests that carry an
+	// Authorization header. Default: false.
+	CacheWithAuthorization bool `yaml:"cache_with_authorization"`
 }

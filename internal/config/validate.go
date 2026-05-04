@@ -48,6 +48,9 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
+	if err := c.validateCache(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -208,6 +211,29 @@ func (c *Config) validateProxy() error {
 	}
 	if c.Proxy.RequestTimeoutMs <= 0 {
 		return fmt.Errorf("config: proxy.request_timeout_ms must be greater than zero")
+	}
+	return nil
+}
+
+func (c *Config) validateCache() error {
+	cc := c.Cache
+	if !cc.Enabled {
+		return nil
+	}
+	if cc.MaxEntries <= 0 {
+		return fmt.Errorf("config: cache.max_entries must be > 0 when cache.enabled is true")
+	}
+	if cc.MaxBytes <= 0 {
+		return fmt.Errorf("config: cache.max_bytes must be > 0 when cache.enabled is true")
+	}
+	if cc.MaxEntryBytes <= 0 {
+		return fmt.Errorf("config: cache.max_entry_bytes must be > 0 when cache.enabled is true")
+	}
+	if cc.MaxEntryBytes > cc.MaxBytes {
+		return fmt.Errorf("config: cache.max_entry_bytes must be <= cache.max_bytes")
+	}
+	if cc.DefaultTTLSeconds < 0 {
+		return fmt.Errorf("config: cache.default_ttl_seconds must be >= 0")
 	}
 	return nil
 }

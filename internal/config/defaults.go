@@ -54,6 +54,13 @@ func DefaultClientConfig() Config {
 			AllowedSchemes:     []string{"http", "https"},
 			MaxResponseBytes:   10 * 1024 * 1024,
 		},
+		Cache: CacheConfig{
+			Enabled:           false,
+			MaxEntries:        512,
+			MaxBytes:          64 * 1024 * 1024, // 64 MiB
+			MaxEntryBytes:     2 * 1024 * 1024,  // 2 MiB
+			DefaultTTLSeconds: 300,
+		},
 		Exit: ExitConfig{
 			RequestTimeoutSec:  30,
 			ResponseBufferSize: 1024 * 1024,
