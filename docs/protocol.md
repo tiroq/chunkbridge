@@ -20,17 +20,17 @@ Character limits: safe ≤ 3 600 chars total; base64 data ≤ 3 400 chars.
 
 ## Frame Types
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `FrameHELLO` | 1 | Handshake |
-| `FrameOPEN` | 2 | Open stream |
-| `FrameDATA` | 3 | Application data |
-| `FrameACK` | 4 | Acknowledgement |
-| `FrameWINDOW` | 5 | Window update |
-| `FrameCLOSE` | 6 | Close stream |
-| `FramePING` | 7 | Keep-alive ping |
-| `FramePONG` | 8 | Ping reply |
-| `FrameERROR` | 9 | Error notification |
+| Constant | Value | Description | Implemented |
+|----------|-------|-------------|-------------|
+| `FrameHELLO` | 1 | Handshake | No |
+| `FrameOPEN` | 2 | Open stream | No |
+| `FrameDATA` | 3 | Application data | **Yes** |
+| `FrameACK` | 4 | Acknowledgement | No |
+| `FrameWINDOW` | 5 | Window update | No |
+| `FrameCLOSE` | 6 | Close stream | No |
+| `FramePING` | 7 | Keep-alive ping | No |
+| `FramePONG` | 8 | Ping reply | No |
+| `FrameERROR` | 9 | Error notification | **Yes** |
 
 ## Frame Struct (JSON)
 
@@ -67,7 +67,7 @@ Decryption is the exact reverse.
 HTTP requests and responses are serialised to JSON inside the `Frame.Payload`:
 
 ```go
-// Request
+// Request (FrameDATA, proxy → exit)
 type relayRequest struct {
     Method  string
     URL     string              // absolute URL
@@ -75,10 +75,46 @@ type relayRequest struct {
     Body    []byte
 }
 
-// Response
+// Response (FrameDATA, exit → proxy)
 type relayResponse struct {
     StatusCode int
     Headers    map[string][]string
     Body       []byte
 }
 ```
+
+## FrameERROR Payload
+
+When the exit node cannot fulfil a request, it sends a `FrameERROR` frame back with the same `RequestID`. The payload is:
+
+```json
+{
+  "code":        "policy_denied",
+  "http_status": 403,
+  "message":     "request denied by policy"
+}
+```
+
+### Error Codes
+
+| Code | Default HTTP Status | Condition |
+|------|---------------------|-----------|
+| `policy_denied` | 403 | Domain/IP/port blocked by exit policy |
+| `bad_request` | 400 | Malformed relay request or invalid URL |
+| `upstream_unavailable` | 502 | Cannot connect to upstream server |
+| `upstream_timeout` | 504 | Upstream did not respond within exit timeout |
+| `response_too_large` | 502 | Upstream response exceeds `MaxResponseBytes` |
+| `internal_error` | 502 | Unexpected internal error on the exit node |
+
+The proxy maps `FrameERROR.http_status` directly to the HTTP response returned to the local client. Error messages are sanitised and do not include request URLs, headers, or upstream response bodies.
+
+### Not Implemented
+
+The following frame types are defined but not implemented:
+
+- `FrameACK` — reliable delivery / acknowledgement
+- `FrameWINDOW` — sliding-window flow control
+- `FrameCLOSE` — explicit stream close
+- `FrameHELLO` / `FrameOPEN` / `FramePING` / `FramePONG` — handshake and keep-alive
+
+There is no retry, resend, or ordering guarantee. `FrameDATA` delivers best-effort.
