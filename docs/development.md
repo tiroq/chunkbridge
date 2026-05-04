@@ -9,11 +9,15 @@ No other external tools are required for local development or CI.
 
 > **relaykit dependency**: chunkbridge consumes `github.com/tiroq/relaykit` as a Go module dependency. In this repository the `go.mod` replaces it with the local sibling directory `../relaykit` so no network access is needed. The relaykit module provides the generic relay core (protocol, crypto, transport, relay session, ratelimit). MAX-specific transport code lives in `internal/maxtransport`.
 
+> **safedialer dependency**: chunkbridge consumes `github.com/tiroq/safedialer` as a Go module dependency. In this repository the `go.mod` replaces it with the local sibling directory `../safedialer` so no network access is needed. safedialer provides SSRF-safe dialling: private IP detection (`IsPrivateIP`), DNS-rebinding-safe `SafeDialer`, and HTTP transport/client helpers. The `internal/policy` package delegates private-IP checks to safedialer; the exit executor constructs its HTTP transport via `safedialer.NewDialer`.
+
 ---
 
-## Switching from local relaykit to a tagged release
+## Switching from local dependencies to tagged releases
 
-During development, `go.mod` contains:
+### relaykit
+
+During development, `go.mod` may contain:
 
 ```
 replace github.com/tiroq/relaykit => ../relaykit
@@ -22,19 +26,32 @@ replace github.com/tiroq/relaykit => ../relaykit
 Once relaykit is tagged and published, remove the `replace` directive and pin the release:
 
 ```bash
-# 1. Edit go.mod — remove the replace line:
-#    replace github.com/tiroq/relaykit => ../relaykit
-
-# 2. Fetch the tagged release
 go get github.com/tiroq/relaykit@v0.1.0
 go mod tidy
+task check
+```
 
-# 3. Verify everything still works
+### safedialer
+
+During development, `go.mod` contains:
+
+```
+replace github.com/tiroq/safedialer => ../safedialer
+```
+
+Once safedialer is tagged and published, remove the `replace` directive and pin the release:
+
+```bash
+# Edit go.mod — remove the replace line:
+#   replace github.com/tiroq/safedialer => ../safedialer
+
+go get github.com/tiroq/safedialer@v0.1.0
+go mod tidy
 task check
 CHUNKBRIDGE_SHARED_KEY=testpassphrase go run ./cmd/chunkbridge selftest
 ```
 
-See [relaykit/docs/release.md](../../relaykit/docs/release.md) for the full relaykit publish checklist.
+See [safedialer/docs/release.md](../../safedialer/docs/release.md) for the full safedialer publish checklist.
 
 ---
 
