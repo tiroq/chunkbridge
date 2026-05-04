@@ -16,7 +16,7 @@ import (
 	"github.com/tiroq/chunkbridge/internal/config"
 	"github.com/tiroq/chunkbridge/internal/exit"
 	"github.com/tiroq/chunkbridge/internal/proxy"
-	"github.com/tiroq/chunkbridge/internal/transport"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // startProxyWithCacheAndConfig starts a full relay pair with an optional cache
