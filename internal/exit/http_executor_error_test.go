@@ -1,4 +1,3 @@
-package exit
 package exit_test
 
 import (
