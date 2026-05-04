@@ -196,3 +196,24 @@ adjustment:
 | Webhook mode | Not implemented. |
 | ACK / WINDOW / retry | Protocol-level reliability is not in transport scope. |
 
+## Live Contract Validation
+
+An optional test harness in `internal/transport/maxapi_live_test.go` validates
+the assumptions above against the real MAX API. It is gated behind both a
+`//go:build live` build tag and the `CHUNKBRIDGE_LIVE_MAX_TESTS=1` env var, so
+it **never runs in CI** or during normal `go test ./...`.
+
+Run it with:
+
+```bash
+export CHUNKBRIDGE_LIVE_MAX_TESTS=1
+export CHUNKBRIDGE_MAX_BASE_URL="https://platform-api.max.ru"
+export CHUNKBRIDGE_MAX_TOKEN="your-token"
+export CHUNKBRIDGE_MAX_PEER_CHAT_ID="your-chat-id"
+task test-live-max
+```
+
+See [docs/live-max-validation.md](live-max-validation.md) for full
+instructions, safety warnings, and guidance on updating `MaxTransport` if a
+live test reveals that an assumption is wrong.
+

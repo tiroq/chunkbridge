@@ -22,6 +22,7 @@ No other external tools are required for local development or CI.
 | `task test-unit` | Run `internal/...` tests only (60 s timeout). |
 | `task test-integration` | Run `tests/integration/...` tests only, with verbose output. |
 | `task test-race` | Run all tests under Go's race detector (120 s timeout). |
+| `task test-live-max` | Run optional live MAX API contract tests (requires credentials; **not** in `task check`). |
 | `task build` | Compile `bin/chunkbridge` for the current platform. |
 | `task selftest` | Run the built-in round-trip selftest (no real transport needed). |
 | `task check` | Run **all** CI checks in sequence: fmt-check → lint → test → test-race → build → selftest. |
@@ -102,6 +103,28 @@ Steps in order:
 9. **Selftest** — `go run ./cmd/chunkbridge selftest` (with `CHUNKBRIDGE_SHARED_KEY=testpassphrase`)
 
 No live MAX API credentials are used or required. The selftest uses an in-process memory transport.
+
+---
+
+## Live MAX API Validation
+
+`task test-live-max` runs optional contract validation tests against the real MAX Bot API.
+
+> **This task is NOT part of `task check` and is NOT run in CI.**
+
+It requires real API credentials and is intended for manual one-off validation
+of the assumed endpoint paths, JSON shapes, and authentication scheme.
+
+```bash
+export CHUNKBRIDGE_LIVE_MAX_TESTS=1
+export CHUNKBRIDGE_MAX_BASE_URL="https://platform-api.max.ru"
+export CHUNKBRIDGE_MAX_TOKEN="your-token"
+export CHUNKBRIDGE_MAX_PEER_CHAT_ID="your-chat-id"
+task test-live-max
+```
+
+See [docs/live-max-validation.md](live-max-validation.md) for full instructions,
+safety warnings, and how to interpret the results.
 
 ---
 
