@@ -18,6 +18,7 @@ func DefaultClientConfig() Config {
 				TokenEnv:       "MAX_API_TOKEN",
 				PollMs:         1000,
 				PollTimeoutSec: 20,
+				DedupeMaxIDs:   4096,
 			},
 		},
 		Crypto: CryptoConfig{

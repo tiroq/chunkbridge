@@ -46,6 +46,18 @@ func TestValidateMemoryTransportDoesNotRequireMaxFields(t *testing.T) {
 	}
 }
 
+func TestValidateMaxInvalidDedupeMaxIDs(t *testing.T) {
+	cfg := defaultMaxConfig()
+	cfg.Transport.Max.DedupeMaxIDs = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for dedupe_max_ids=0, got nil")
+	}
+	cfg.Transport.Max.DedupeMaxIDs = -1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for dedupe_max_ids=-1, got nil")
+	}
+}
+
 // defaultMaxConfig returns a minimal valid Config for transport.type = "max".
 func defaultMaxConfig() config.Config {
 	cfg := config.DefaultClientConfig()

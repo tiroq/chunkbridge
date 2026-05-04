@@ -55,6 +55,11 @@ type MaxConfig struct {
 	// PollTimeoutSec is the server-side long-poll timeout in seconds sent
 	// as the `timeout` query parameter. Default: 20.
 	PollTimeoutSec int `yaml:"poll_timeout_sec"`
+	// DedupeMaxIDs is the maximum number of message IDs kept in the receive
+	// deduplication window. When the window is full the oldest ID is evicted;
+	// a message whose ID was evicted may be re-delivered.
+	// Must be > 0 when transport.type is "max". Default: 4096.
+	DedupeMaxIDs int `yaml:"dedupe_max_ids"`
 }
 
 // CryptoConfig holds key-derivation parameters.

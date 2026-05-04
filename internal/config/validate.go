@@ -83,6 +83,9 @@ func (c *Config) validateMax() error {
 	if mc.PeerChatID == "" {
 		return fmt.Errorf("config: transport.max.peer_chat_id must be non-empty when transport.type is max")
 	}
+	if mc.DedupeMaxIDs <= 0 {
+		return fmt.Errorf("config: transport.max.dedupe_max_ids must be greater than zero when transport.type is max")
+	}
 	return nil
 }
 
