@@ -33,10 +33,11 @@ No linter is configured; `go vet` is the only static analysis step.
 | `internal/maxtransport` | MAX-specific `Transport` adapter (`MaxTransport`, `MaxTransportConfig`, `RateLimitError`) |
 | `internal/proxy` | `HTTPProxy` — local HTTP proxy server; calls `relay.Session.SendRequest` |
 | `internal/exit` | `HTTPExecutor` — reads transport, reassembles, dispatches outbound HTTP |
-| `internal/policy` | `Policy.CheckRequest`: scheme → port → private-IP → domain allow-list |
+| `internal/policy` | `Policy.CheckRequest`: scheme → port → private-IP → domain allow-list (delegates `IsPrivateIP` to safedialer) |
 | `internal/observability` | `Logger` (slog) and `Metrics` (`atomic.Int64` counters) |
 | `internal/cache` | Conservative in-memory LRU response cache (client-side only) |
 | **relaykit** (external) | Generic relay library — see below |
+| **safedialer** (external) | DNS-rebinding-safe dialer — see below |
 
 ### relaykit packages (consumed via `github.com/tiroq/relaykit`)
 
@@ -48,6 +49,18 @@ No linter is configured; `go vet` is the only static analysis step.
 | `pkg/transport` | `Transport` interface, `MemoryTransport` |
 | `pkg/relay` | `Session` — manages seqNum, pending map, reassembler; owns send/receive loop |
 | `pkg/ratelimit` | Token-bucket + adaptive limiter |
+
+### safedialer (consumed via `github.com/tiroq/safedialer`)
+
+| Symbol | Role |
+|--------|------|
+| `IsPrivateIP` | Reports whether an IP is in a private/reserved range; used by `internal/policy` |
+| `SafeDialer` / `NewDialer` | Resolves hostname, validates resolved IPs, dials first valid IP directly (TOCTOU-safe) |
+| `NewTransport` / `NewClient` | `*http.Transport` / `*http.Client` backed by `SafeDialer` |
+| `Policy` | `BlockPrivateRanges`, `AllowedSchemes`, `AllowedPorts`, `BlockedPorts` |
+| `CheckURL` | Pre-dial scheme + port validation helper |
+
+Local replace directive (`replace github.com/tiroq/safedialer => ../safedialer`) is active until safedialer is tagged.
 
 ## Critical Constraints
 
