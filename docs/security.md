@@ -98,3 +98,17 @@ The exit executor strips all standard hop-by-hop headers before forwarding reque
 `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `Proxy-Connection`, `TE`, `Trailer`, `Trailers`, `Transfer-Encoding`, `Upgrade`
 
 Additionally, any header names listed in the `Connection` header value are also removed before forwarding. End-to-end headers such as `Authorization`, `Cookie`, `User-Agent`, and `Accept` are preserved.
+
+## Client-Side HTTP Cache
+
+The cache (`internal/cache`) operates **exclusively on the client side** and is not a security boundary. It does not affect the exit node or the transport layer.
+
+**Default-safe behaviour:**
+- Requests carrying `Authorization` or `Cookie` headers bypass the cache by default (`cache_with_authorization: false`, `cache_with_cookies: false`).
+- Responses with `Cache-Control: private` or `Set-Cookie` are never stored by default (`cache_private: false`).
+- Responses with `Cache-Control: no-store` or `Vary: *` (or any unsupported `Vary` field) are never stored.
+
+**The cache does not provide confidentiality.** Cache entries are held in process memory and are accessible to anything that can inspect the process. Do not cache sensitive authenticated responses without careful consideration.
+
+**The cache is in-memory only** — it does not write to disk and does not survive restarts.
+
