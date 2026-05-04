@@ -95,3 +95,32 @@ This is **not** full flow-control or a sliding window. It is a simple head-of-li
 - Retry / resend on failure
 - Priority queues (control vs. data)
 - Back-pressure from the exit node to the client
+
+## Structured Relay Errors (FrameERROR)
+
+When the exit node cannot fulfil a request, it sends a `FrameERROR` frame (type 9) back to the proxy using the same `RequestID`. The frame payload is a JSON `ErrorPayload` with three fields: `code`, `http_status`, and `message`.
+
+`relay.Session.SendRequest` decodes the error and returns a `*relay.RelayError` to the caller. The proxy maps `RelayError.HTTPStatus` directly to the HTTP response:
+
+| Error code | HTTP status | Condition |
+|-----------|-------------|-----------|
+| `policy_denied` | 403 | IP/domain/port blocked at exit |
+| `bad_request` | 400 | Malformed relay request |
+| `upstream_unavailable` | 502 | Connection refused or DNS failure |
+| `upstream_timeout` | 504 | Exit's HTTP client timed out |
+| `response_too_large` | 502 | Response exceeded `MaxResponseBytes` |
+| `internal_error` | 502 | Unexpected exit-side failure |
+
+Error messages are sanitised and do not include request URLs, headers, or upstream bodies.
+
+Late `FrameERROR` frames that arrive after the request has already timed out or been cancelled are silently discarded by `dispatch()` — they do not panic or corrupt state.
+
+## Graceful Shutdown
+
+Both `client` and `exit` CLI commands handle `SIGINT` / `SIGTERM`.
+
+**Client mode:** `signal.NotifyContext` cancels the signal context. The main goroutine calls `proxy.Shutdown(ctx)` with a 10-second deadline, which delegates to `http.Server.Shutdown`. In-flight requests complete or are abandoned before the process exits. `Serve` returns `http.ErrServerClosed`, which is treated as a normal exit.
+
+**Exit mode:** The signal context is passed directly to `executor.Run`. When cancelled, `Run` returns `context.Canceled`, which is treated as a clean stop (no error log, no `os.Exit(1)`).
+
+Shutdown is bounded. The client shutdown timeout is 10 seconds. There is no infinite hang.
