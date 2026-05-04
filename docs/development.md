@@ -11,6 +11,33 @@ No other external tools are required for local development or CI.
 
 ---
 
+## Switching from local relaykit to a tagged release
+
+During development, `go.mod` contains:
+
+```
+replace github.com/tiroq/relaykit => ../relaykit
+```
+
+Once relaykit is tagged and published, remove the `replace` directive and pin the release:
+
+```bash
+# 1. Edit go.mod — remove the replace line:
+#    replace github.com/tiroq/relaykit => ../relaykit
+
+# 2. Fetch the tagged release
+go get github.com/tiroq/relaykit@v0.1.0
+go mod tidy
+
+# 3. Verify everything still works
+task check
+CHUNKBRIDGE_SHARED_KEY=testpassphrase go run ./cmd/chunkbridge selftest
+```
+
+See [relaykit/docs/release.md](../../relaykit/docs/release.md) for the full relaykit publish checklist.
+
+---
+
 ## Running Checks Locally
 
 ### Quick reference
