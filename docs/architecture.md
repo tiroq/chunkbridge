@@ -13,7 +13,7 @@
 │                                                │             │
 └────────────────────────────────────────────────┼─────────────┘
                                                  │ transport.Transport
-                                                 │ (MemoryTransport / MaxTransport)
+                                                 │ (relaykit MemoryTransport / internal/maxtransport MaxTransport)
 ┌────────────────────────────────────────────────┼─────────────┐
 │  Exit Process (exit side)                      │             │
 │                                                ▼             │
@@ -32,17 +32,18 @@
 |---------|---------------|
 | `cmd/chunkbridge` | CLI entry point (`client`, `exit`, `selftest`, `version`) |
 | `internal/config` | Config structs, YAML loader, defaults |
-| `internal/protocol` | Frame types, encode/decode, chunking, reassembly, ACK |
-| `internal/crypto` | XChaCha20-Poly1305 AEAD, Argon2id key derivation |
-| `internal/compress` | gzip compress/decompress |
-| `internal/transport` | Transport interface, MemoryTransport, MaxTransport skeleton |
-| `internal/relay` | Session layer: request/response correlation over transport |
+| `internal/maxtransport` | MAX-specific transport adapter (`MaxTransport`, `MaxTransportConfig`, `RateLimitError`) |
 | `internal/proxy` | HTTP proxy server, delegates to relay.Session; optional in-memory cache |
 | `internal/exit` | HTTP executor, receives relay requests, makes outbound calls |
 | `internal/policy` | Domain allowlist, port block, private-IP block, response limits |
-| `internal/ratelimit` | Token-bucket and adaptive rate limiter |
 | `internal/cache` | Conservative in-memory LRU response cache (client-side only) |
 | `internal/observability` | Structured logger (slog), atomic metrics |
+| `relaykit/pkg/protocol` | Frame types, encode/decode, chunking, reassembly, ACK |
+| `relaykit/pkg/crypto` | XChaCha20-Poly1305 AEAD, Argon2id key derivation |
+| `relaykit/pkg/compress` | gzip compress/decompress |
+| `relaykit/pkg/transport` | Transport interface, MemoryTransport |
+| `relaykit/pkg/relay` | Session layer: request/response correlation over transport |
+| `relaykit/pkg/ratelimit` | Token-bucket and adaptive rate limiter |
 
 ## Data Flow (request)
 
