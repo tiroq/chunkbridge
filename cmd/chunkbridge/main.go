@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/tiroq/chunkbridge/internal/config"
@@ -94,9 +97,27 @@ func runClient() {
 		os.Exit(1)
 	}
 	fmt.Printf("chunkbridge client proxy listening on %s\n", ln.Addr())
-	if err := p.Serve(ln); err != nil {
-		fmt.Fprintf(os.Stderr, "proxy: %v\n", err)
-		os.Exit(1)
+
+	// Trap SIGINT/SIGTERM for graceful shutdown.
+	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- p.Serve(ln) }()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "proxy: %v\n", err)
+			os.Exit(1)
+		}
+	case <-sigCtx.Done():
+		fmt.Println("chunkbridge client shutting down...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := p.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "proxy shutdown: %v\n", err)
+		}
 	}
 }
 
@@ -134,11 +155,16 @@ func runExit() {
 		executor.WithRateLimiter(lim)
 	}
 	fmt.Println("chunkbridge exit node running")
-	ctx := context.Background()
-	if err := executor.Run(ctx); err != nil {
+
+	// Run until SIGINT/SIGTERM or transport closes.
+	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := executor.Run(sigCtx); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(os.Stderr, "exit: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("chunkbridge exit node stopped")
 }
 
 func runSelftest() {
