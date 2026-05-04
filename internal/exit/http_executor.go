@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -139,19 +140,19 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	var req relayRequest
 	if err := json.Unmarshal(frame.Payload, &req); err != nil {
 		e.log.Error("exit: unmarshal request", "err", err)
-		e.sendError(ctx, frame, http.StatusBadRequest, "invalid request payload")
+		e.sendError(ctx, frame, protocol.ErrCodeBadRequest, http.StatusBadRequest, "invalid request payload")
 		return
 	}
 
 	if err := e.pol.CheckRequest(req.URL); err != nil {
 		e.log.Warn("exit: policy denied", "url", req.URL, "err", err)
-		e.sendError(ctx, frame, http.StatusForbidden, err.Error())
+		e.sendError(ctx, frame, protocol.ErrCodePolicyDenied, http.StatusForbidden, "request denied by policy")
 		return
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bytes.NewReader(req.Body))
 	if err != nil {
-		e.sendError(ctx, frame, http.StatusBadRequest, fmt.Sprintf("build request: %v", err))
+		e.sendError(ctx, frame, protocol.ErrCodeBadRequest, http.StatusBadRequest, "could not build upstream request")
 		return
 	}
 	for k, vals := range req.Headers {
@@ -173,7 +174,12 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	httpResp, err := e.client.Do(httpReq)
 	if err != nil {
 		e.log.Error("exit: outbound request", "err", err)
-		e.sendError(ctx, frame, http.StatusBadGateway, fmt.Sprintf("outbound: %v", err))
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			e.sendError(ctx, frame, protocol.ErrCodeUpstreamTimeout, http.StatusGatewayTimeout, "upstream timeout")
+		} else {
+			e.sendError(ctx, frame, protocol.ErrCodeUpstreamUnavailable, http.StatusBadGateway, "upstream unavailable")
+		}
 		return
 	}
 	defer httpResp.Body.Close()
@@ -182,7 +188,7 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	if ct := httpResp.Header.Get("Content-Type"); ct != "" {
 		if err := policy.CheckContentType(ct, e.cfg.Policy); err != nil {
 			e.log.Warn("exit: content-type policy denied", "content_type", ct)
-			e.sendError(ctx, frame, http.StatusForbidden, err.Error())
+			e.sendError(ctx, frame, protocol.ErrCodePolicyDenied, http.StatusForbidden, "response content-type denied by policy")
 			return
 		}
 	}
@@ -193,11 +199,11 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	}
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxBytes+1))
 	if err != nil {
-		e.sendError(ctx, frame, http.StatusBadGateway, fmt.Sprintf("read body: %v", err))
+		e.sendError(ctx, frame, protocol.ErrCodeInternalError, http.StatusBadGateway, "failed to read upstream response")
 		return
 	}
 	if int64(len(body)) > maxBytes {
-		e.sendError(ctx, frame, http.StatusBadGateway, "response too large")
+		e.sendError(ctx, frame, protocol.ErrCodeResponseTooLarge, http.StatusBadGateway, "response too large")
 		return
 	}
 
@@ -209,7 +215,7 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 
 	payload, err := json.Marshal(rel)
 	if err != nil {
-		e.sendError(ctx, frame, http.StatusInternalServerError, "marshal response")
+		e.sendError(ctx, frame, protocol.ErrCodeInternalError, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -228,16 +234,13 @@ func (e *HTTPExecutor) handleRequest(ctx context.Context, frame *protocol.Frame)
 	e.metrics.ExitResponses.Add(1)
 }
 
-// sendError sends a relay error response back to the proxy.
-func (e *HTTPExecutor) sendError(ctx context.Context, req *protocol.Frame, status int, msg string) {
-	rel := relayResponse{
-		StatusCode: status,
-		Body:       []byte(msg),
-	}
-	payload, _ := json.Marshal(rel)
+// sendError sends a FrameERROR back to the proxy with a structured error payload.
+// msg must not contain sensitive request or response body data.
+func (e *HTTPExecutor) sendError(ctx context.Context, req *protocol.Frame, code string, httpStatus int, msg string) {
+	payload, _ := protocol.MarshalErrorPayload(code, httpStatus, msg)
 	frame := &protocol.Frame{
 		Version:   1,
-		Type:      protocol.FrameDATA,
+		Type:      protocol.FrameERROR,
 		SessionID: req.SessionID,
 		RequestID: req.RequestID,
 		Payload:   payload,
