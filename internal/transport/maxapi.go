@@ -12,8 +12,48 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// ─── dedupeSet ───────────────────────────────────────────────────────────────
+
+// dedupeSet is a bounded deduplication window backed by a map and a FIFO
+// eviction queue. It provides O(1) lookup and amortised O(1) insertion.
+// When the window is full the oldest entry is evicted, so a message whose ID
+// was evicted may be re-delivered — this is documented and acceptable.
+//
+// dedupeSet is not safe for concurrent use; callers must hold their own lock.
+type dedupeSet struct {
+	ids  map[string]struct{}
+	fifo []string
+	max  int
+}
+
+func newDedupeSet(max int) *dedupeSet {
+	return &dedupeSet{
+		ids:  make(map[string]struct{}, max),
+		fifo: make([]string, 0, max),
+		max:  max,
+	}
+}
+
+// seen reports whether id is in the current window.
+func (d *dedupeSet) seen(id string) bool {
+	_, ok := d.ids[id]
+	return ok
+}
+
+// add records id in the window, evicting the oldest entry if necessary.
+func (d *dedupeSet) add(id string) {
+	if len(d.fifo) >= d.max {
+		oldest := d.fifo[0]
+		d.fifo = d.fifo[1:]
+		delete(d.ids, oldest)
+	}
+	d.ids[id] = struct{}{}
+	d.fifo = append(d.fifo, id)
+}
 
 // ─── errors ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +103,10 @@ type MaxTransportConfig struct {
 	// SafeChars is the maximum allowed rune count of outbound message text.
 	// 0 means no limit is enforced at the transport layer.
 	SafeChars int
+	// DedupeMaxIDs is the capacity of the receive deduplication window.
+	// When the window is full the oldest ID is evicted; messages whose ID was
+	// evicted may be re-delivered. Must be > 0. Default applied by NewMaxTransport: 4096.
+	DedupeMaxIDs int
 }
 
 // ─── transport ────────────────────────────────────────────────────────────────
@@ -81,9 +125,11 @@ type MaxTransport struct {
 	pollInterval   time.Duration
 	pollTimeoutSec int
 	safeChars      int
+	dedupeMaxIDs   int
 	client         *http.Client
 	closed         chan struct{}
 	closeOnce      sync.Once
+	receiveStarted atomic.Bool
 	on429          func() // optional; called when HTTP 429 is received
 }
 
@@ -110,6 +156,11 @@ func NewMaxTransport(cfg MaxTransportConfig) (*MaxTransport, error) {
 	// that an empty-response poll does not trigger a client deadline error.
 	httpTimeout := time.Duration(pollTimeoutSec+10) * time.Second
 
+	dedupeMaxIDs := cfg.DedupeMaxIDs
+	if dedupeMaxIDs <= 0 {
+		dedupeMaxIDs = 4096
+	}
+
 	return &MaxTransport{
 		baseURL:        strings.TrimRight(cfg.BaseURL, "/"),
 		token:          token,
@@ -118,6 +169,7 @@ func NewMaxTransport(cfg MaxTransportConfig) (*MaxTransport, error) {
 		pollInterval:   pollInterval,
 		pollTimeoutSec: pollTimeoutSec,
 		safeChars:      cfg.SafeChars,
+		dedupeMaxIDs:   dedupeMaxIDs,
 		client:         &http.Client{Timeout: httpTimeout},
 		closed:         make(chan struct{}),
 	}, nil
@@ -131,7 +183,14 @@ func (m *MaxTransport) WithOn429(fn func()) *MaxTransport {
 	return m
 }
 
-// ─── wire structs ─────────────────────────────────────────────────────────────
+// WithHTTPClient replaces the internal HTTP client. Intended for testing with
+// custom round-trippers (e.g., to assert response body closure). Returns m for
+// chaining.
+func (m *MaxTransport) WithHTTPClient(c *http.Client) *MaxTransport {
+	m.client = c
+	return m
+}
+
 //
 // The JSON shapes below represent the assumed MAX Bot API contract.
 // See docs/max-transport.md §"Assumed API JSON shapes" for details.
@@ -195,8 +254,14 @@ func (m *MaxTransport) Send(ctx context.Context, msg Message) error {
 
 // Receive starts an internal polling goroutine and returns a buffered channel
 // of incoming messages. The channel is closed when ctx is cancelled or Close
-// is called. Receive should be called at most once per MaxTransport instance.
+// is called.
+//
+// Receive must be called at most once per MaxTransport instance. A second call
+// returns an error without starting a goroutine.
 func (m *MaxTransport) Receive(ctx context.Context) (<-chan Message, error) {
+	if !m.receiveStarted.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("transport: max: receive already started")
+	}
 	ch := make(chan Message, 256)
 	go m.pollLoop(ctx, ch)
 	return ch, nil
@@ -206,21 +271,27 @@ func (m *MaxTransport) Receive(ctx context.Context) (<-chan Message, error) {
 func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 	defer close(ch)
 
-	// seen deduplicates by message ID. For long-running deployments the map
-	// grows unboundedly; this is a known gap noted in docs/max-transport.md.
-	seen := make(map[string]struct{})
+	// pollCtx is cancelled when either the caller's ctx is done or the
+	// transport is closed, so in-flight HTTP requests unblock promptly on Close.
+	pollCtx, pollCancel := context.WithCancel(ctx)
+	defer pollCancel()
+	go func() {
+		select {
+		case <-m.closed:
+			pollCancel()
+		case <-pollCtx.Done():
+		}
+	}()
+
+	dedupe := newDedupeSet(m.dedupeMaxIDs)
 	var afterID string
 
 	for {
-		select {
-		case <-ctx.Done():
+		if pollCtx.Err() != nil {
 			return
-		case <-m.closed:
-			return
-		default:
 		}
 
-		messages, err := m.pollOnce(ctx, afterID)
+		messages, err := m.pollOnce(pollCtx, afterID)
 		if err != nil {
 			switch {
 			case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -242,9 +313,7 @@ func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 				}
 				select {
 				case <-time.After(delay):
-				case <-ctx.Done():
-					return
-				case <-m.closed:
+				case <-pollCtx.Done():
 					return
 				}
 				continue
@@ -252,21 +321,19 @@ func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 			// Network / 5xx errors: wait one poll interval then retry.
 			select {
 			case <-time.After(m.pollInterval):
-			case <-ctx.Done():
-				return
-			case <-m.closed:
+			case <-pollCtx.Done():
 				return
 			}
 			continue
 		}
 
 		for _, apiMsg := range messages {
-			// Deduplicate by stable message ID.
+			// Deduplicate by stable message ID using the bounded FIFO window.
 			if apiMsg.MessageID != "" {
-				if _, dup := seen[apiMsg.MessageID]; dup {
+				if dedupe.seen(apiMsg.MessageID) {
 					continue
 				}
-				seen[apiMsg.MessageID] = struct{}{}
+				dedupe.add(apiMsg.MessageID)
 				afterID = apiMsg.MessageID
 			}
 
@@ -292,9 +359,7 @@ func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 
 			select {
 			case ch <- out:
-			case <-ctx.Done():
-				return
-			case <-m.closed:
+			case <-pollCtx.Done():
 				return
 			}
 		}
@@ -303,9 +368,7 @@ func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 		if len(messages) == 0 {
 			select {
 			case <-time.After(m.pollInterval):
-			case <-ctx.Done():
-				return
-			case <-m.closed:
+			case <-pollCtx.Done():
 				return
 			}
 		}
