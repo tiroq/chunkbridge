@@ -44,6 +44,7 @@
 | `relaykit/pkg/transport` | Transport interface, MemoryTransport |
 | `relaykit/pkg/relay` | Session layer: request/response correlation over transport |
 | `relaykit/pkg/ratelimit` | Token-bucket and adaptive rate limiter |
+| `safedialer` | DNS-rebinding-safe dialer, private IP detection, safe HTTP transport/client |
 
 ## Data Flow (request)
 
