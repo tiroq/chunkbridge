@@ -334,7 +334,32 @@ All three flows tested by selftest and integration tests:
 
 ---
 
-## 10. Final Recommendation
+## 11. Post-Audit Update — PR 7 (MaxTransport implementation)
+
+**Date:** 2026-05-04
+
+`MaxTransport` is **no longer a stub**. `Send` and `Receive` are fully
+implemented against assumed MAX Bot API endpoints and tested with
+`httptest.Server`. All tests pass under the race detector.
+
+| Item | Before PR 7 | After PR 7 |
+|------|------------|------------|
+| `MaxTransport.Send` | STUB (`ErrNotImplemented`) | DONE (mocked) |
+| `MaxTransport.Receive` | STUB (`ErrNotImplemented`) | DONE (mocked, long-poll) |
+| `On429()` feedback | STUB (never called) | DONE — `WithOn429` callback; called on 429 in both send and receive paths |
+| `Retry-After` parsing | MISSING | DONE — returned in `*RateLimitError` |
+| Config: `base_url`, `peer_chat_id` | MISSING | DONE — required fields, validated at startup |
+| Config: `poll_timeout_sec` | MISSING | DONE |
+| Transport tests | MISSING | 16 tests in `maxapi_test.go` + 5 config tests |
+
+**Remaining live validation gap:** The assumed API endpoint paths, JSON field
+names, and authentication scheme have not been validated against the real Max.ai
+production API. See `docs/max-transport.md §Remaining Gaps` for the full list.
+
+**Overall classification remains `MVP_READY` (memory transport)** and is now
+upgraded to **`PARTIAL_MVP` for MAX transport** — the implementation is
+complete but untested against the live API.
+
 
 **Classify as `MVP_READY`** with the caveat that "MVP" is scoped to the
 memory-transport configuration. The core relay, security, and reliability

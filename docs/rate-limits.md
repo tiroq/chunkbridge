@@ -15,7 +15,7 @@ The table below reflects what is actually wired into the relay path today versus
 | Per-request relay timeout (`proxy.request_timeout_ms`) | **Implemented** — default 30 000 ms; timeout returns HTTP 502 Bad Gateway |
 | ACK frames (`FrameACK`) | **Defined but not wired** — `NewACKFrame`/`IsACK` exist in `internal/protocol/ack.go` but are never called from session, relay, or exit |
 | WINDOW frames and sliding-window flow control | **Not implemented** — `WindowConfig` struct exists in config; no sliding-window logic exists in the relay path |
-| Retry-After / 429 handling in MAX transport | **Not implemented** — `BackoffDuration()` and `On429()` exist in `AdaptiveRateLimiter` but are never called from the transport layer |
+| Retry-After / 429 handling in MAX transport | **Implemented (mocked only)** — `MaxTransport` now calls `On429()` and returns `*RateLimitError` with the parsed `Retry-After` duration on HTTP 429. Wire `WithOn429(lim.On429)` at startup. The transport does not automatically sleep-and-retry sends; the caller receives a `*RateLimitError` and must decide whether to retry. Tested against `httptest.Server`; not validated against the live MAX API. |
 | Control vs. data priority queues | **Not implemented** — all sends share one transport channel with no priority |
 
 > **Summary for operators:** DATA sends in `relay.Session` and `exit.HTTPExecutor` are throttled by the configured rate limiter. Concurrent in-flight requests are capped at `proxy.max_concurrent_requests` (default 64) with a 429 response on overflow. Per-request timeouts are enforced via `proxy.request_timeout_ms` (default 30 s). ACK, window, retry, and priority-queue features remain unimplemented.
