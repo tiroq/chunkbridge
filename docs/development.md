@@ -7,6 +7,8 @@
 
 No other external tools are required for local development or CI.
 
+> **relaykit dependency**: chunkbridge consumes `github.com/tiroq/relaykit` as a Go module dependency. In this repository the `go.mod` replaces it with the local sibling directory `../relaykit` so no network access is needed. The relaykit module provides the generic relay core (protocol, crypto, transport, relay session, ratelimit). MAX-specific transport code lives in `internal/maxtransport`.
+
 ---
 
 ## Running Checks Locally
