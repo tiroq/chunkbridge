@@ -52,16 +52,16 @@ The logger (`internal/observability/logger.go`) never logs:
 
 ### Protection implemented
 
-The exit executor no longer relies solely on URL-string hostname validation. A custom `SafeDialer` (in `internal/policy/dialer.go`) is installed as the `DialContext` hook of the exit executor's `http.Transport`.
+The exit executor uses `safedialer.NewDialer` (from `github.com/tiroq/safedialer`) as the `DialContext` hook of its `http.Transport`. The `internal/policy` package exposes `policy.IsPrivateIP` as a thin wrapper around `safedialer.IsPrivateIP` for use in pre-dial URL checks.
 
 When `BlockPrivateRanges = true`, the `SafeDialer`:
 
 1. Resolves all IP addresses for the target hostname using `net.DefaultResolver.LookupIPAddr`.
-2. Validates every resolved IP against `policy.IsPrivateIP` before any connection is attempted.
+2. Validates every resolved IP against `safedialer.IsPrivateIP` before any connection is attempted.
 3. If any resolved IP is private, loopback, link-local, CGNAT, or metadata-range, the request fails with a policy error — no TCP connection is opened.
 4. Dials the first allowed resolved IP directly (as `ip:port`), which prevents the OS from performing a second DNS lookup at connect time. This eliminates the TOCTOU race that would otherwise exist between validation and connection.
 
-The resolver is injected via an interface (`policy.Resolver`), so tests use a fake resolver without real DNS.
+The resolver is injected via `safedialer.Resolver` interface, so tests use a fake resolver without real DNS.
 
 ### Extended private ranges
 
