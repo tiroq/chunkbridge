@@ -69,10 +69,14 @@ go build -o bin/chunkbridge ./cmd/chunkbridge
 Or with [Task](https://taskfile.dev):
 
 ```bash
-task build
-task test
-task selftest
+task build       # build for current platform
+task test        # run tests
+task selftest    # in-process round-trip test
+task check       # run all CI checks locally
+task build-all   # cross-compile for all platforms
 ```
+
+See [docs/development.md](docs/development.md) for the full list of developer commands, CI description, and release build instructions.
 
 ## HTTP Response Cache (client-side)
 
@@ -119,6 +123,7 @@ See [docs/security.md](docs/security.md) for full details.
 | [docs/rate-limits.md](docs/rate-limits.md) | Rate-limiting strategy |
 | [docs/max-transport.md](docs/max-transport.md) | Max.ai transport integration notes |
 | [docs/security.md](docs/security.md) | Threat model and security properties |
+| [docs/development.md](docs/development.md) | Developer commands, CI, and release builds |
 
 ## License
 
