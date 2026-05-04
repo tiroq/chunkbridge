@@ -45,6 +45,28 @@ When the transport layer receives a 429 (Too Many Requests) error:
 3. The data token bucket is rebuilt with the new rate and burst=1.
 4. The caller waits for `BackoffDuration()` = 1s + up to 500ms jitter.
 
+## Client-Side HTTP Cache (Interaction with Rate Limits)
+
+The in-memory HTTP response cache (`internal/cache`) reduces relay and MAX transport traffic for repeated GET/HEAD requests that have a positive freshness lifetime. A cache HIT:
+
+- Does **not** call `relay.Session.SendRequest` — no frames are chunked, encrypted, or sent.
+- Does **not** consume any token-bucket tokens.
+- Is not counted against `proxy.max_concurrent_requests`.
+
+This makes the cache a first-line traffic reduction mechanism that complements rate limiting.
+
+Relevant config fields (all under `cache:`):
+
+| Field | Default | Effect |
+|-------|---------|--------|
+| `enabled` | `false` | Master switch |
+| `max_entries` | 512 | Cap on number of cached responses |
+| `max_bytes` | 67 108 864 (64 MiB) | Cap on total body bytes in cache |
+| `max_entry_bytes` | 2 097 152 (2 MiB) | Maximum size of a single cached body; larger bodies are not cached |
+| `default_ttl_seconds` | 300 | Heuristic TTL for static file extensions (`.css`, `.js`, etc.) with no explicit freshness header |
+
+The cache is on the client (proxy) side only and has no effect on the exit node or transport layer.
+
 ## Configuration
 
 > **Note:** The `ack` and `window` config fields are parsed but have **no runtime effect** in the current version. The `rate_limits` fields (`global_rps`, `data_rps`, `control_rps`, `burst`) **are now used** to build the runtime limiter in client and exit mode.
