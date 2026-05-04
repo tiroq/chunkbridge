@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tiroq/chunkbridge/internal/cache"
 	"github.com/tiroq/chunkbridge/internal/config"
 	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
@@ -89,6 +90,18 @@ func runClient() {
 	p := proxy.NewHTTPProxy(t, key, *cfg)
 	if lim != nil {
 		p.WithRateLimiter(lim)
+	}
+	if cfg.Cache.Enabled {
+		c := cache.New(cache.Config{
+			MaxEntries:             cfg.Cache.MaxEntries,
+			MaxBytes:               cfg.Cache.MaxBytes,
+			MaxEntryBytes:          cfg.Cache.MaxEntryBytes,
+			DefaultTTLSeconds:      cfg.Cache.DefaultTTLSeconds,
+			CachePrivate:           cfg.Cache.CachePrivate,
+			CacheWithCookies:       cfg.Cache.CacheWithCookies,
+			CacheWithAuthorization: cfg.Cache.CacheWithAuthorization,
+		})
+		p.WithCache(c)
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen.Address, cfg.Listen.Port)
 	ln, err := net.Listen("tcp", addr)
