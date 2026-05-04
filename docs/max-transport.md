@@ -23,12 +23,14 @@ transport:
     from_handle: "@my-agent"      # this endpoint's handle; used to filter echoes
     poll_ms: 1000                 # ms between empty-response polls (default: 1000)
     poll_timeout_sec: 20          # server-side long-poll timeout param (default: 20)
+    dedupe_max_ids: 4096          # deduplication window capacity (default: 4096)
 ```
 
 `Config.Validate()` enforces the following when `transport.type` is `"max"`:
 - `transport.max.base_url` must be non-empty.
 - `transport.max.token_env` must be non-empty.
 - `transport.max.peer_chat_id` must be non-empty.
+- `transport.max.dedupe_max_ids` must be > 0.
 
 The token value is **not** validated at config time; it is read from the
 environment at startup and an error is returned immediately if the env var is
@@ -99,14 +101,17 @@ An empty `messages` array means no new messages during the poll window.
 ## Receive / Polling Behaviour
 
 - Starts a background goroutine that calls `GET /messages/poll` in a loop.
+- **`Receive` must be called at most once** per `MaxTransport` instance. A second call returns `fmt.Errorf("transport: max: receive already started")` without starting a goroutine.
 - Delivers messages on a buffered channel (capacity 256).
-- Deduplicates messages by `message_id`. **Known gap:** the deduplication map
-  grows unboundedly for long-running deployments. A future PR should add LRU or
-  time-based eviction.
+- Deduplicates messages by `message_id` using a **bounded FIFO window** of
+  `dedupe_max_ids` entries (default 4096). When the window is full the oldest
+  ID is evicted; a message whose ID was evicted **may be re-delivered**. This
+  is intentional and prevents unbounded memory growth in long-running deployments.
 - Filters echo: messages whose `from` field matches `from_handle` are dropped.
 - Parses `created_at` as RFC 3339; falls back to `time.Now()` if absent or
   malformed.
-- Stops cleanly on context cancellation or `Close()`.
+- **Stops cleanly on context cancellation or `Close()`**, including unblocking
+  any in-flight HTTP request. `Close()` is idempotent.
 - On HTTP 429 during polling: calls the `On429` callback (if registered), waits
   for the parsed `Retry-After` duration (or one poll interval if absent), then
   retries.
@@ -142,7 +147,7 @@ All tests in `internal/transport/maxapi_test.go` use `httptest.Server`.
 No real MAX API credentials or network access are required.
 
 | Test | Covers |
-|------|--------|
+|------|—-----|
 | `TestMaxTransportSendSuccess` | Method, path, Authorization header, Content-Type, JSON body, peer_chat_id |
 | `TestMaxTransportSendRejectsOversizedMessage` | Pre-flight size check; no HTTP call made |
 | `TestMaxTransportSendRejectsEmptyMessage` | Empty text rejection |
@@ -159,6 +164,11 @@ No real MAX API credentials or network access are required.
 | `TestNewMaxTransportMissingToken` | Missing env var → construction error naming the var |
 | `TestRateLimitErrorMessage` | `RateLimitError.Error()` format with and without RetryAfter |
 | `TestMaxTransportCloseIsIdempotent` | Double `Close()` does not panic |
+| `TestMaxTransportReceiveDedupeBounded` | Window eviction: ID re-delivered after eviction from bounded window |
+| `TestMaxTransportReceiveRejectsSecondReceive` | Second `Receive()` call returns "receive already started" error |
+| `TestMaxTransportCloseUnblocksReceive` | `Close()` cancels in-flight poll request; channel closes within 2 s |
+| `TestMaxTransportPollClosesResponseBody` | All HTTP response bodies are closed (tracked via custom RoundTripper) |
+| `TestMaxTransportReceiveEmptyPollDoesNotSpin` | Empty poll responses respect poll interval; ≤ 10 requests in 300 ms |
 
 Config validation tests are in `internal/config/config_max_test.go`:
 
@@ -169,6 +179,7 @@ Config validation tests are in `internal/config/config_max_test.go`:
 | `TestValidateMaxMissingPeerChatID` | peer_chat_id required for type=max |
 | `TestValidateMaxValidConfig` | fully populated max config passes |
 | `TestValidateMemoryTransportDoesNotRequireMaxFields` | memory transport unaffected |
+| `TestValidateMaxInvalidDedupeMaxIDs` | dedupe_max_ids = 0 or negative rejected |
 
 ## Remaining Gaps (Live Validation)
 
@@ -181,7 +192,6 @@ adjustment:
 | Response shape | JSON field names (`message_id`, `from`, `text`, `created_at`) are assumed. |
 | Authentication scheme | `Authorization: Bearer` is assumed; the real API may differ. |
 | Long-poll timeout parameter | `?timeout=<n>` is assumed. |
-| Deduplication map growth | Unbounded map; needs LRU/time eviction for long deployments. |
 | Retry-After full retry loop | `*RateLimitError.RetryAfter` is returned but the transport does not automatically sleep-and-retry on send. |
 | Webhook mode | Not implemented. |
 | ACK / WINDOW / retry | Protocol-level reliability is not in transport scope. |
