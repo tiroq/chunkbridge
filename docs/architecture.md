@@ -37,26 +37,29 @@
 | `internal/compress` | gzip compress/decompress |
 | `internal/transport` | Transport interface, MemoryTransport, MaxTransport skeleton |
 | `internal/relay` | Session layer: request/response correlation over transport |
-| `internal/proxy` | HTTP proxy server, delegates to relay.Session |
+| `internal/proxy` | HTTP proxy server, delegates to relay.Session; optional in-memory cache |
 | `internal/exit` | HTTP executor, receives relay requests, makes outbound calls |
 | `internal/policy` | Domain allowlist, port block, private-IP block, response limits |
 | `internal/ratelimit` | Token-bucket and adaptive rate limiter |
+| `internal/cache` | Conservative in-memory LRU response cache (client-side only) |
 | `internal/observability` | Structured logger (slog), atomic metrics |
 
 ## Data Flow (request)
 
 1. HTTP client → `HTTPProxy.ServeHTTP`
-2. Proxy serialises `relayRequest{Method, URL, Headers, Body}` → JSON
-3. JSON wrapped in `protocol.Frame{Type=DATA, RequestID=uuid}`
-4. `relay.Session` chunks the frame if payload > `MaxPayloadBytes` (1600 B)
-5. Each chunk is JSON-marshalled, gzip-compressed, XChaCha20-Poly1305-encrypted (AAD = sessionID|seqNum), base64-encoded
-6. Each chunk is formatted as `CB1|D|<sessionID>|<seqNum>|<b64>` and sent via `transport.Transport`
-7. Exit receives text messages, decodes each frame
-8. `protocol.Reassembler` collects chunks; on completion, deserialises `relayRequest`
-9. `policy.Policy.CheckRequest` validates URL
-10. `http.Client` makes outbound request
-11. Response is serialised, chunked, encrypted, sent back the same way
-12. Proxy `relay.Session` reassembles response, writes to HTTP response writer
+2. **Cache lookup** (if `cache.enabled: true`): if the request is a safe GET/HEAD with no `Authorization`/`Cookie`/`no-cache`, and a fresh entry exists, the response is served from cache (`X-Chunkbridge-Cache: HIT`) and no relay traffic is generated.
+3. Proxy serialises `relayRequest{Method, URL, Headers, Body}` → JSON
+4. JSON wrapped in `protocol.Frame{Type=DATA, RequestID=uuid}`
+5. `relay.Session` chunks the frame if payload > `MaxPayloadBytes` (1600 B)
+6. Each chunk is JSON-marshalled, gzip-compressed, XChaCha20-Poly1305-encrypted (AAD = sessionID|seqNum), base64-encoded
+7. Each chunk is formatted as `CB1|D|<sessionID>|<seqNum>|<b64>` and sent via `transport.Transport`
+8. Exit receives text messages, decodes each frame
+9. `protocol.Reassembler` collects chunks; on completion, deserialises `relayRequest`
+10. `policy.Policy.CheckRequest` validates URL
+11. `http.Client` makes outbound request
+12. Response is serialised, chunked, encrypted, sent back the same way
+13. Proxy `relay.Session` reassembles response, writes to HTTP response writer
+14. **Cache store** (MISS path): if the response is cacheable (status is in the allowed set, no `Set-Cookie`/`private`/`no-store`, `Vary` field is only `Accept-Encoding`, TTL > 0) the response is stored under `method + URL + Accept-Encoding` (`X-Chunkbridge-Cache: MISS` added to client response).
 
 ## Encryption Details
 
