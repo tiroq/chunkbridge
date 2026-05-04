@@ -343,7 +343,15 @@ func buildTransport(cfg *config.Config) (transport.Transport, error) {
 	switch cfg.Transport.Type {
 	case "max":
 		mc := cfg.Transport.Max
-		return transport.NewMaxTransport(mc.TokenEnv, mc.FromHandle, mc.ToHandle)
+		return transport.NewMaxTransport(transport.MaxTransportConfig{
+			BaseURL:        mc.BaseURL,
+			TokenEnv:       mc.TokenEnv,
+			PeerChatID:     mc.PeerChatID,
+			FromHandle:     mc.FromHandle,
+			PollIntervalMs: mc.PollMs,
+			PollTimeoutSec: mc.PollTimeoutSec,
+			SafeChars:      cfg.Limits.Message.SafeChars,
+		})
 	case "memory":
 		// MemoryTransport is an in-process paired transport; it cannot connect
 		// two independent processes. Use it via selftest or integration tests only.
