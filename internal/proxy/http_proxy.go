@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tiroq/chunkbridge/internal/cache"
 	"github.com/tiroq/chunkbridge/internal/config"
 	"github.com/tiroq/chunkbridge/internal/observability"
 	"github.com/tiroq/chunkbridge/internal/policy"
@@ -42,6 +43,7 @@ type HTTPProxy struct {
 	metrics *observability.Metrics
 	log     *observability.Logger
 	server  *http.Server
+	cache   *cache.Cache // nil when disabled
 }
 
 // NewHTTPProxy creates an HTTPProxy that uses t for transport and key for encryption.
@@ -68,6 +70,14 @@ func NewHTTPProxy(t transport.Transport, key []byte, cfg config.Config) *HTTPPro
 // every outbound DATA chunk is throttled. Call before Serve.
 func (p *HTTPProxy) WithRateLimiter(lim relay.DataLimiter) {
 	p.session.WithRateLimiter(lim)
+}
+
+// WithCache attaches an in-memory response cache to the proxy. When set, safe
+// fresh GET/HEAD responses are served from cache without hitting the relay.
+// Call before Serve.
+func (p *HTTPProxy) WithCache(c *cache.Cache) *HTTPProxy {
+	p.cache = c
+	return p
 }
 
 // Serve starts accepting connections on ln and blocks until ln is closed.
@@ -125,6 +135,33 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Cache lookup ──────────────────────────────────────────────────────────
+	if p.cache != nil {
+		reqOpts := cache.RequestOptions{
+			CacheWithAuthorization: p.cfg.Cache.CacheWithAuthorization,
+			CacheWithCookies:       p.cfg.Cache.CacheWithCookies,
+		}
+		if cache.IsRequestCacheable(r, reqOpts) {
+			key := cache.BuildKey(r.Method, targetURL, r.Header)
+			if entry, ok := p.cache.Get(key); ok {
+				// Cache HIT — serve directly without relay.
+				for k, vals := range entry.Header {
+					for _, v := range vals {
+						w.Header().Add(k, v)
+					}
+				}
+				w.Header().Set("X-Chunkbridge-Cache", "HIT")
+				w.WriteHeader(entry.StatusCode)
+				if len(entry.Body) > 0 && r.Method != http.MethodHead {
+					_, _ = io.Copy(w, bytes.NewReader(entry.Body))
+				}
+				p.metrics.ProxyResponses.Add(1)
+				return
+			}
+		}
+	}
+
+	// ── Relay round-trip ──────────────────────────────────────────────────────
 	req := relayRequest{
 		Method:  r.Method,
 		URL:     targetURL,
@@ -172,10 +209,50 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Cache store (MISS path) ───────────────────────────────────────────────
+	if p.cache != nil {
+		respOpts := cache.ResponseOptions{
+			MaxEntryBytes: p.cfg.Cache.MaxEntryBytes,
+			CachePrivate:  p.cfg.Cache.CachePrivate,
+		}
+		reqOpts := cache.RequestOptions{
+			CacheWithAuthorization: p.cfg.Cache.CacheWithAuthorization,
+			CacheWithCookies:       p.cfg.Cache.CacheWithCookies,
+		}
+		respHeader := http.Header(relResp.Headers)
+		bodySize := int64(len(relResp.Body))
+		if cache.IsRequestCacheable(r, reqOpts) &&
+			cache.IsResponseCacheable(r.Method, relResp.StatusCode, respHeader, bodySize, respOpts) {
+			now := time.Now()
+			ttl := cache.TTLFor(respHeader, targetURL, p.cfg.Cache.DefaultTTLSeconds, now)
+			if ttl > 0 {
+				key := cache.BuildKey(r.Method, targetURL, r.Header)
+				bodyCopy := make([]byte, len(relResp.Body))
+				copy(bodyCopy, relResp.Body)
+				entry := &cache.Entry{
+					Method:       r.Method,
+					URL:          targetURL,
+					StatusCode:   relResp.StatusCode,
+					Header:       cache.CopyHeader(respHeader),
+					Body:         bodyCopy,
+					StoredAt:     now,
+					ExpiresAt:    now.Add(ttl),
+					ETag:         respHeader.Get("ETag"),
+					LastModified: respHeader.Get("Last-Modified"),
+				}
+				p.cache.Put(key, entry)
+			}
+		}
+	}
+
+	// ── Write response to client ──────────────────────────────────────────────
 	for k, vals := range relResp.Headers {
 		for _, v := range vals {
 			w.Header().Add(k, v)
 		}
+	}
+	if p.cache != nil {
+		w.Header().Set("X-Chunkbridge-Cache", "MISS")
 	}
 	w.WriteHeader(relResp.StatusCode)
 	if len(relResp.Body) > 0 {
