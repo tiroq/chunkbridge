@@ -18,11 +18,12 @@ import (
 
 	"github.com/tiroq/chunkbridge/internal/cache"
 	"github.com/tiroq/chunkbridge/internal/config"
-	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
+	"github.com/tiroq/chunkbridge/internal/maxtransport"
 	"github.com/tiroq/chunkbridge/internal/proxy"
-	"github.com/tiroq/chunkbridge/internal/ratelimit"
-	"github.com/tiroq/chunkbridge/internal/transport"
+	cbcrypto "github.com/tiroq/relaykit/pkg/crypto"
+	"github.com/tiroq/relaykit/pkg/ratelimit"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 const version = "0.1.0"
@@ -356,7 +357,7 @@ func buildTransport(cfg *config.Config) (transport.Transport, error) {
 	switch cfg.Transport.Type {
 	case "max":
 		mc := cfg.Transport.Max
-		return transport.NewMaxTransport(transport.MaxTransportConfig{
+		return maxtransport.NewMaxTransport(maxtransport.MaxTransportConfig{
 			BaseURL:        mc.BaseURL,
 			TokenEnv:       mc.TokenEnv,
 			PeerChatID:     mc.PeerChatID,
