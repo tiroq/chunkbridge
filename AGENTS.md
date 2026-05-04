@@ -30,16 +30,24 @@ No linter is configured; `go vet` is the only static analysis step.
 |---------|------|
 | `cmd/chunkbridge` | CLI: wires key derivation, transport, proxy/exit together |
 | `internal/config` | YAML config loader; `DefaultClientConfig()` / `DefaultExitConfig()` |
-| `internal/crypto` | `Encrypt`/`Decrypt` (XChaCha20-Poly1305), `DeriveKey`/`GenerateSalt` (Argon2id) |
-| `internal/compress` | Thin `gzip` wrappers used in the encode/decode pipeline |
-| `internal/protocol` | `Frame`, `EncodeMessage`/`DecodeMessage`, `Chunk`, `Reassembler`, ACK |
-| `internal/transport` | `Transport` interface, `MemoryTransport`, `MaxTransport` (skeleton) |
-| `internal/relay` | `Session` — manages seqNum, pending map, reassembler; owns send/receive loop |
+| `internal/maxtransport` | MAX-specific `Transport` adapter (`MaxTransport`, `MaxTransportConfig`, `RateLimitError`) |
 | `internal/proxy` | `HTTPProxy` — local HTTP proxy server; calls `relay.Session.SendRequest` |
 | `internal/exit` | `HTTPExecutor` — reads transport, reassembles, dispatches outbound HTTP |
 | `internal/policy` | `Policy.CheckRequest`: scheme → port → private-IP → domain allow-list |
-| `internal/ratelimit` | Token-bucket + adaptive limiter (not yet wired into hot path) |
 | `internal/observability` | `Logger` (slog) and `Metrics` (`atomic.Int64` counters) |
+| `internal/cache` | Conservative in-memory LRU response cache (client-side only) |
+| **relaykit** (external) | Generic relay library — see below |
+
+### relaykit packages (consumed via `github.com/tiroq/relaykit`)
+
+| Package | Role |
+|---------|------|
+| `pkg/crypto` | `Encrypt`/`Decrypt` (XChaCha20-Poly1305), `DeriveKey`/`GenerateSalt` (Argon2id) |
+| `pkg/compress` | Thin `gzip` wrappers used in the encode/decode pipeline |
+| `pkg/protocol` | `Frame`, `EncodeMessage`/`DecodeMessage`, `Chunk`, `Reassembler`, ACK |
+| `pkg/transport` | `Transport` interface, `MemoryTransport` |
+| `pkg/relay` | `Session` — manages seqNum, pending map, reassembler; owns send/receive loop |
+| `pkg/ratelimit` | Token-bucket + adaptive limiter |
 
 ## Critical Constraints
 
@@ -80,7 +88,8 @@ Decode is the exact reverse. See [docs/protocol.md](docs/protocol.md).
 
 ## Adding a New Transport
 
-1. Implement `internal/transport.Transport` (`Send`, `Receive`, `Close`).
-2. Add a new case to `buildTransport` in `cmd/chunkbridge/main.go`.
-3. Add config fields under `TransportConfig` in `internal/config/config.go`.
-4. Read [docs/max-transport.md](docs/max-transport.md) for Max.ai-specific constraints.
+1. Implement `transport.Transport` from `github.com/tiroq/relaykit/pkg/transport` (`Send`, `Receive`, `Close`).
+2. Place the adapter in `internal/maxtransport` (MAX-specific) or create a new `internal/<name>transport` package.
+3. Add a new case to `buildTransport` in `cmd/chunkbridge/main.go`.
+4. Add config fields under `TransportConfig` in `internal/config/config.go`.
+5. Read [docs/max-transport.md](docs/max-transport.md) for Max.ai-specific constraints.
