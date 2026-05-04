@@ -14,6 +14,11 @@ func DefaultClientConfig() Config {
 		},
 		Transport: TransportConfig{
 			Type: "memory",
+			Max: MaxConfig{
+				TokenEnv:       "MAX_API_TOKEN",
+				PollMs:         1000,
+				PollTimeoutSec: 20,
+			},
 		},
 		Crypto: CryptoConfig{
 			PassphraseEnv: "CHUNKBRIDGE_SHARED_KEY",

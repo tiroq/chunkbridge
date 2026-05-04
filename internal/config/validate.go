@@ -63,10 +63,27 @@ func (c *Config) validateMode() error {
 func (c *Config) validateTransport() error {
 	switch c.Transport.Type {
 	case "memory", "max":
-		return nil
 	default:
 		return fmt.Errorf("config: transport.type must be one of memory,max")
 	}
+	if c.Transport.Type == "max" {
+		return c.validateMax()
+	}
+	return nil
+}
+
+func (c *Config) validateMax() error {
+	mc := c.Transport.Max
+	if mc.BaseURL == "" {
+		return fmt.Errorf("config: transport.max.base_url must be non-empty when transport.type is max")
+	}
+	if mc.TokenEnv == "" {
+		return fmt.Errorf("config: transport.max.token_env must be non-empty when transport.type is max")
+	}
+	if mc.PeerChatID == "" {
+		return fmt.Errorf("config: transport.max.peer_chat_id must be non-empty when transport.type is max")
+	}
+	return nil
 }
 
 func (c *Config) validateCrypto() error {

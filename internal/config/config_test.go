@@ -76,6 +76,9 @@ func TestValidateMemoryTransportIsValidType(t *testing.T) {
 func TestValidateMaxTransportIsValidType(t *testing.T) {
 	cfg := validClient()
 	cfg.Transport.Type = "max"
+	cfg.Transport.Max.BaseURL = "https://api.max.example.com/v1"
+	cfg.Transport.Max.TokenEnv = "MAX_API_TOKEN"
+	cfg.Transport.Max.PeerChatID = "chat-123"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected max transport to pass validation, got: %v", err)
 	}

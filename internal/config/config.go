@@ -37,10 +37,24 @@ type TransportConfig struct {
 
 // MaxConfig holds Max.ai / messaging API settings.
 type MaxConfig struct {
-	TokenEnv   string `yaml:"token_env"`
+	// TokenEnv is the name of the environment variable that holds the bearer token.
+	// Required when transport.type = "max".
+	TokenEnv string `yaml:"token_env"`
+	// BaseURL is the root URL of the MAX Bot API, e.g. "https://api.max.example.com/v1".
+	// Required when transport.type = "max".
+	BaseURL string `yaml:"base_url"`
+	// PeerChatID is the chat ID of the remote chunkbridge endpoint.
+	// Required when transport.type = "max".
+	PeerChatID string `yaml:"peer_chat_id"`
+	// FromHandle is the handle of this endpoint. Messages from this sender
+	// are filtered out during receive to avoid echo.
 	FromHandle string `yaml:"from_handle"`
-	ToHandle   string `yaml:"to_handle"`
-	PollMs     int    `yaml:"poll_ms"`
+	// PollMs is the delay in ms between consecutive poll requests when the
+	// previous response was empty. Default: 1000.
+	PollMs int `yaml:"poll_ms"`
+	// PollTimeoutSec is the server-side long-poll timeout in seconds sent
+	// as the `timeout` query parameter. Default: 20.
+	PollTimeoutSec int `yaml:"poll_timeout_sec"`
 }
 
 // CryptoConfig holds key-derivation parameters.
