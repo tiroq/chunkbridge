@@ -19,6 +19,7 @@ import (
 	"github.com/tiroq/relaykit/pkg/protocol"
 	"github.com/tiroq/relaykit/pkg/relay"
 	"github.com/tiroq/relaykit/pkg/transport"
+	"github.com/tiroq/safedialer"
 )
 
 // relayRequest mirrors the proxy's relayRequest struct.
@@ -77,12 +78,12 @@ func (e *HTTPExecutor) WithRateLimiter(lim relay.DataLimiter) *HTTPExecutor {
 
 // NewHTTPExecutor creates an HTTPExecutor using t as the transport.
 func NewHTTPExecutor(t transport.Transport, key []byte, cfg config.Config) *HTTPExecutor {
-	safeDialer := policy.NewSafeDialer(
-		net.DefaultResolver,
-		cfg.Policy.BlockPrivateRanges,
-	)
+	sdPolicy := safedialer.Policy{
+		BlockPrivateRanges: cfg.Policy.BlockPrivateRanges,
+	}
+	sd := safedialer.NewDialer(sdPolicy, net.DefaultResolver)
 	httpTransport := &http.Transport{
-		DialContext:         safeDialer.DialContext,
+		DialContext:         sd.DialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
 	return &HTTPExecutor{
