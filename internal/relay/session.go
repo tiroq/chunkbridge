@@ -150,6 +150,13 @@ func (s *Session) SendRequest(ctx context.Context, frame *protocol.Frame, timeou
 	defer timer.Stop()
 	select {
 	case resp := <-ch:
+		if resp.Type == protocol.FrameERROR {
+			ep, err := protocol.UnmarshalErrorPayload(resp.Payload)
+			if err != nil {
+				return nil, fmt.Errorf("relay: malformed error frame: %w", err)
+			}
+			return nil, &RelayError{Code: ep.Code, HTTPStatus: ep.HTTPStatus, Message: ep.Message}
+		}
 		return resp, nil
 	case <-timer.C:
 		return nil, fmt.Errorf("relay: timeout waiting for response to request %s", frame.RequestID)
