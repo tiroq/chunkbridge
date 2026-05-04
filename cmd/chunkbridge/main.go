@@ -351,6 +351,7 @@ func buildTransport(cfg *config.Config) (transport.Transport, error) {
 			PollIntervalMs: mc.PollMs,
 			PollTimeoutSec: mc.PollTimeoutSec,
 			SafeChars:      cfg.Limits.Message.SafeChars,
+			DedupeMaxIDs:   mc.DedupeMaxIDs,
 		})
 	case "memory":
 		// MemoryTransport is an in-process paired transport; it cannot connect
