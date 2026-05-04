@@ -36,7 +36,7 @@
 //   - Does not send sensitive data.
 //   - The message text includes "live contract test" so it can be distinguished
 //     from real traffic in the chat history.
-package transport_test
+package maxtransport_test
 
 import (
 	"context"
@@ -46,7 +46,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tiroq/chunkbridge/internal/transport"
+	"github.com/tiroq/chunkbridge/internal/maxtransport"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // liveSkipUnless checks that all required env vars for live tests are set.
@@ -69,7 +70,7 @@ func liveSkipUnless(t *testing.T) {
 }
 
 // newLiveTransport builds a MaxTransport from the live env vars.
-func newLiveTransport(t *testing.T) *transport.MaxTransport {
+func newLiveTransport(t *testing.T) *maxtransport.MaxTransport {
 	t.Helper()
 
 	// Map the live env var to a name that NewMaxTransport reads via os.Getenv.
@@ -84,7 +85,7 @@ func newLiveTransport(t *testing.T) *transport.MaxTransport {
 		}
 	}
 
-	cfg := transport.MaxTransportConfig{
+	cfg := maxtransport.MaxTransportConfig{
 		BaseURL:        os.Getenv("CHUNKBRIDGE_MAX_BASE_URL"),
 		TokenEnv:       "CHUNKBRIDGE_MAX_TOKEN",
 		PeerChatID:     os.Getenv("CHUNKBRIDGE_MAX_PEER_CHAT_ID"),
@@ -95,7 +96,7 @@ func newLiveTransport(t *testing.T) *transport.MaxTransport {
 		SafeChars: 0,
 	}
 
-	mt, err := transport.NewMaxTransport(cfg)
+	mt, err := maxtransport.NewMaxTransport(cfg)
 	if err != nil {
 		t.Fatalf("NewMaxTransport: %v", err)
 	}

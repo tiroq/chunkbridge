@@ -1,4 +1,4 @@
-package transport_test
+package maxtransport_test
 
 import (
 	"context"
@@ -12,16 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tiroq/chunkbridge/internal/transport"
+	"github.com/tiroq/chunkbridge/internal/maxtransport"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 // newTestTransport creates a MaxTransport pointed at srv with a fixed token.
-func newTestTransport(t *testing.T, srv *httptest.Server, opts ...func(*transport.MaxTransportConfig)) *transport.MaxTransport {
+func newTestTransport(t *testing.T, srv *httptest.Server, opts ...func(*maxtransport.MaxTransportConfig)) *maxtransport.MaxTransport {
 	t.Helper()
 	t.Setenv("TEST_MAX_TOKEN", "secret-token")
-	cfg := transport.MaxTransportConfig{
+	cfg := maxtransport.MaxTransportConfig{
 		BaseURL:        srv.URL,
 		TokenEnv:       "TEST_MAX_TOKEN",
 		PeerChatID:     "chat-99",
@@ -33,7 +34,7 @@ func newTestTransport(t *testing.T, srv *httptest.Server, opts ...func(*transpor
 	for _, o := range opts {
 		o(&cfg)
 	}
-	mt, err := transport.NewMaxTransport(cfg)
+	mt, err := maxtransport.NewMaxTransport(cfg)
 	if err != nil {
 		t.Fatalf("NewMaxTransport: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestMaxTransportSendRejectsOversizedMessage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	mt := newTestTransport(t, srv, func(c *transport.MaxTransportConfig) {
+	mt := newTestTransport(t, srv, func(c *maxtransport.MaxTransportConfig) {
 		c.SafeChars = 5
 	})
 
@@ -176,7 +177,7 @@ func TestMaxTransportSendRateLimited(t *testing.T) {
 		t.Fatal("expected error for 429 response, got nil")
 	}
 
-	var rlErr *transport.RateLimitError
+	var rlErr *maxtransport.RateLimitError
 	if !errors.As(err, &rlErr) {
 		t.Fatalf("expected *RateLimitError, got %T: %v", err, err)
 	}
@@ -342,7 +343,7 @@ func TestMaxTransportReceiveIgnoresSelfMessages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	mt := newTestTransport(t, srv, func(c *transport.MaxTransportConfig) {
+	mt := newTestTransport(t, srv, func(c *maxtransport.MaxTransportConfig) {
 		c.FromHandle = "self"
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -421,12 +422,12 @@ func TestMaxTransportReceiveBacksOffOn429(t *testing.T) {
 func TestNewMaxTransportMissingToken(t *testing.T) {
 	// Ensure the env var is unset.
 	t.Setenv("MISSING_TOKEN_ENV", "")
-	cfg := transport.MaxTransportConfig{
+	cfg := maxtransport.MaxTransportConfig{
 		BaseURL:    "http://example.com",
 		TokenEnv:   "MISSING_TOKEN_ENV",
 		PeerChatID: "chat-1",
 	}
-	_, err := transport.NewMaxTransport(cfg)
+	_, err := maxtransport.NewMaxTransport(cfg)
 	if err == nil {
 		t.Fatal("expected error for missing token env var, got nil")
 	}
@@ -436,12 +437,12 @@ func TestNewMaxTransportMissingToken(t *testing.T) {
 }
 
 func TestRateLimitErrorMessage(t *testing.T) {
-	err := &transport.RateLimitError{RetryAfter: 5 * time.Second}
+	err := &maxtransport.RateLimitError{RetryAfter: 5 * time.Second}
 	if !strings.Contains(err.Error(), "5s") {
 		t.Errorf("RateLimitError.Error() should include duration, got: %q", err.Error())
 	}
 
-	errNoRA := &transport.RateLimitError{}
+	errNoRA := &maxtransport.RateLimitError{}
 	if strings.Contains(errNoRA.Error(), "retry after") {
 		t.Errorf("RateLimitError without RetryAfter should not mention duration, got: %q", errNoRA.Error())
 	}
@@ -481,12 +482,12 @@ func TestMaxTransportSend413(t *testing.T) {
 
 func TestMaxTransportCloseIsIdempotent(t *testing.T) {
 	t.Setenv("TEST_MAX_TOKEN", "tok")
-	cfg := transport.MaxTransportConfig{
+	cfg := maxtransport.MaxTransportConfig{
 		BaseURL:    "http://localhost:9",
 		TokenEnv:   "TEST_MAX_TOKEN",
 		PeerChatID: "c",
 	}
-	mt, err := transport.NewMaxTransport(cfg)
+	mt, err := maxtransport.NewMaxTransport(cfg)
 	if err != nil {
 		t.Fatalf("NewMaxTransport: %v", err)
 	}
@@ -523,7 +524,7 @@ func TestMaxTransportReceiveDedupeBounded(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	mt := newTestTransport(t, srv, func(c *transport.MaxTransportConfig) {
+	mt := newTestTransport(t, srv, func(c *maxtransport.MaxTransportConfig) {
 		c.DedupeMaxIDs = 2
 		c.PollIntervalMs = 10
 	})
@@ -600,14 +601,14 @@ func TestMaxTransportCloseUnblocksReceive(t *testing.T) {
 	defer func() { close(done); srv.Close() }()
 
 	t.Setenv("TEST_MAX_TOKEN", "secret-token")
-	cfg := transport.MaxTransportConfig{
+	cfg := maxtransport.MaxTransportConfig{
 		BaseURL:        srv.URL,
 		TokenEnv:       "TEST_MAX_TOKEN",
 		PeerChatID:     "chat-99",
 		PollIntervalMs: 10,
 		PollTimeoutSec: 60, // would block for 60 s without Close
 	}
-	mt, err := transport.NewMaxTransport(cfg)
+	mt, err := maxtransport.NewMaxTransport(cfg)
 	if err != nil {
 		t.Fatalf("NewMaxTransport: %v", err)
 	}
@@ -693,7 +694,7 @@ func TestMaxTransportPollClosesResponseBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	mt := newTestTransport(t, srv, func(c *transport.MaxTransportConfig) {
+	mt := newTestTransport(t, srv, func(c *maxtransport.MaxTransportConfig) {
 		c.PollIntervalMs = 20
 	})
 
@@ -734,7 +735,7 @@ func TestMaxTransportReceiveEmptyPollDoesNotSpin(t *testing.T) {
 	defer srv.Close()
 
 	const pollMs = 50
-	mt := newTestTransport(t, srv, func(c *transport.MaxTransportConfig) {
+	mt := newTestTransport(t, srv, func(c *maxtransport.MaxTransportConfig) {
 		c.PollIntervalMs = pollMs
 	})
 

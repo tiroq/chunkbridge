@@ -1,4 +1,4 @@
-package transport
+package maxtransport
 
 import (
 	"bytes"
@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // ─── dedupeSet ───────────────────────────────────────────────────────────────
@@ -220,7 +222,7 @@ type maxAPIMessage struct {
 //
 // Errors are prefixed with "transport: max:". A *RateLimitError is returned on
 // HTTP 429 and includes the parsed Retry-After duration if the header is present.
-func (m *MaxTransport) Send(ctx context.Context, msg Message) error {
+func (m *MaxTransport) Send(ctx context.Context, msg transport.Message) error {
 	if msg.Text == "" {
 		return fmt.Errorf("transport: max: message text must not be empty")
 	}
@@ -258,17 +260,17 @@ func (m *MaxTransport) Send(ctx context.Context, msg Message) error {
 //
 // Receive must be called at most once per MaxTransport instance. A second call
 // returns an error without starting a goroutine.
-func (m *MaxTransport) Receive(ctx context.Context) (<-chan Message, error) {
+func (m *MaxTransport) Receive(ctx context.Context) (<-chan transport.Message, error) {
 	if !m.receiveStarted.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("transport: max: receive already started")
 	}
-	ch := make(chan Message, 256)
+	ch := make(chan transport.Message, 256)
 	go m.pollLoop(ctx, ch)
 	return ch, nil
 }
 
 // pollLoop polls GET /messages/poll until ctx is done or the transport is closed.
-func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
+func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- transport.Message) {
 	defer close(ch)
 
 	// pollCtx is cancelled when either the caller's ctx is done or the
@@ -350,7 +352,7 @@ func (m *MaxTransport) pollLoop(ctx context.Context, ch chan<- Message) {
 				}
 			}
 
-			out := Message{
+			out := transport.Message{
 				ID:        apiMsg.MessageID,
 				From:      apiMsg.From,
 				Text:      apiMsg.Text,
