@@ -74,6 +74,31 @@ task test
 task selftest
 ```
 
+## HTTP Response Cache (client-side)
+
+The client proxy includes an optional, conservative in-memory cache that serves fresh GET/HEAD responses without relaying them through the transport.
+
+**Key properties:**
+- Disabled by default (`cache.enabled: false`).
+- Only `GET` and `HEAD` requests are eligible.
+- Responses with `Set-Cookie`, `Cache-Control: private` or `no-store`, or `Vary: *` (or any unsupported `Vary` field) are never stored.
+- Requests carrying `Authorization` or `Cookie` headers are bypassed by default (configurable).
+- Freshness is determined from `Cache-Control: max-age`, `Expires`, or a heuristic default TTL applied to known static file extensions (`.css`, `.js`, `.png`, etc.).
+- The cache is bounded by entry count and total byte size; the least-recently-used entry is evicted when either limit is exceeded.
+- The cache is in-memory only — it is not persisted to disk and does not survive restarts.
+- Stale-while-revalidate and conditional GET (ETag/If-Modified-Since) are not implemented.
+
+Enable in `chunkbridge.client.yaml`:
+
+```yaml
+cache:
+  enabled: true
+  max_entries: 512          # max number of stored responses
+  max_bytes: 67108864       # 64 MiB total body budget
+  max_entry_bytes: 2097152  # 2 MiB per response body
+  default_ttl_seconds: 300  # fallback TTL for static extensions with no Expires
+```
+
 ## Security
 
 * All frames are encrypted with XChaCha20-Poly1305 (256-bit key).
