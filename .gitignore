@@ -10,6 +10,11 @@ bin/
 chunkbridge.client.yaml
 chunkbridge.exit.yaml
 
+# Env files with credentials (keep *.example files)
+.env
+.env.*
+!.env.*.example
+
 # Editor/OS
 .DS_Store
 .idea/
