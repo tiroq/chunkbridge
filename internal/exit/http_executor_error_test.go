@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/tiroq/chunkbridge/internal/config"
-	"github.com/tiroq/chunkbridge/internal/protocol"
-	"github.com/tiroq/chunkbridge/internal/transport"
+	"github.com/tiroq/relaykit/pkg/protocol"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // receiveFrame sends a relay request to the executor and waits for the first

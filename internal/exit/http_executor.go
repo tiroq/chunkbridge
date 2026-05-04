@@ -16,9 +16,9 @@ import (
 	"github.com/tiroq/chunkbridge/internal/config"
 	"github.com/tiroq/chunkbridge/internal/observability"
 	"github.com/tiroq/chunkbridge/internal/policy"
-	"github.com/tiroq/chunkbridge/internal/protocol"
-	"github.com/tiroq/chunkbridge/internal/relay"
-	"github.com/tiroq/chunkbridge/internal/transport"
+	"github.com/tiroq/relaykit/pkg/protocol"
+	"github.com/tiroq/relaykit/pkg/relay"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // relayRequest mirrors the proxy's relayRequest struct.

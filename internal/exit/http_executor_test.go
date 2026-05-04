@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/tiroq/chunkbridge/internal/config"
-	cbcrypto "github.com/tiroq/chunkbridge/internal/crypto"
 	"github.com/tiroq/chunkbridge/internal/exit"
-	"github.com/tiroq/chunkbridge/internal/protocol"
-	"github.com/tiroq/chunkbridge/internal/relay"
-	"github.com/tiroq/chunkbridge/internal/transport"
+	cbcrypto "github.com/tiroq/relaykit/pkg/crypto"
+	"github.com/tiroq/relaykit/pkg/protocol"
+	"github.com/tiroq/relaykit/pkg/relay"
+	"github.com/tiroq/relaykit/pkg/transport"
 )
 
 // testKey derives a deterministic test key.
